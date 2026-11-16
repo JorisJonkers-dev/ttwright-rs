@@ -1,11 +1,8 @@
 > **This is the JorisJonkers-dev rewrite of [SulfurNitride/TTW_Linux_Installer](https://github.com/SulfurNitride/TTW_Linux_Installer)**, kept as `ttwright-rs`, a Component of [Raul's Trusty Toolbox](https://github.com/JorisJonkers-dev/rauls-trusty-toolbox). The Toolbox's `raul` drives it as a process through its Contracts, its result and event documents (ADR-0002 and ADR-0007 in that repository), and passes it the game copies it detected; the CLI also works alone. The Contracts are being added in #5. The text below is upstream's README for now; see [FORK.md](FORK.md) for what differs. Report problems with this repository here, not upstream.
 
-<img width="1860" height="1516" alt="image" src="https://github.com/user-attachments/assets/f3aa1651-b304-4def-acfb-495610765ba2" />
-
-
 A linux native installer for MPI packages (TTW, BSA Decompressors, so far only tested TTW and FNV/Oblivion Decompressor). As a note this will not line up with 17GBs output it should be around 18GBs.
 
-To run it all you need to do is either double click it and allow executing, or `chmod +x mpi_installer_gui`.
+This repository has no window of its own: the Toolbox is the only UI. Run the `mpi_installer` command line below, or install from the Toolbox.
 
 Downloads are on nexus or via the github actions now they expire every day so please use nexus. https://www.nexusmods.com/site/mods/1657
 
@@ -58,11 +55,8 @@ cargo build --release
 ## Nix Usage
 
 ```bash
-# Run GUI
-nix run github:SulfurNitride/TTW_Linux_Installer
-
-# Run CLI
-nix run github:SulfurNitride/TTW_Linux_Installer#cli
+# Run the CLI
+nix run github:JorisJonkers-dev/ttwright-rs
 
 # Enter dev shell
 nix develop

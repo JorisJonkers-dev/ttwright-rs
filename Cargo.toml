@@ -75,11 +75,6 @@ chrono = "0.4"
 # SQLite for BSA caching (reduces RAM usage)
 rusqlite = { version = "0.39", features = ["bundled"] }
 
-# GUI
-eframe = { version = "0.33.3", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
-egui = "0.33.3"
-rfd = "0.17"  # File dialogs
-
 # Platform-specific (must be at end to not break other deps)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -96,7 +91,3 @@ required-features = ["ffmpeg-audio"]
 [[bin]]
 name = "mpi_installer"
 path = "src/app/cli.rs"
-
-[[bin]]
-name = "mpi_installer_gui"
-path = "src/app/gui.rs"
