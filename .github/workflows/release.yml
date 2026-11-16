@@ -1,39 +1,49 @@
-# Tag -> release flow (org standard).
-#
-# release-please maintains a release PR that accumulates conventional commits
-# and, when merged, creates a vX.Y.Z git tag + GitHub Release and bumps the
-# version manifest. Release binaries hang off the published release below.
-#
-# This gives every repo an explicit, immutable version. Consumers pin exact
-# versions (see VERSIONING.md); nothing deploys or resolves from a moving
-# branch.
+# release-please keeps a release pull request open; merging it tags vX.Y.Z, writes CHANGELOG.md and bumps the
+# version in Cargo.toml and package.nix (release-please-config.json). Nothing is published to a registry. Each
+# release gets the ttwright binaries for Linux x86_64, Windows x86_64 and macOS (universal), the Contract schemas
+# and SHA256SUMS as assets, with a build provenance attestation over all of them (scripts/release-assets.sh). Then
+# the Toolbox is told, so its Component bump workflow opens the pull request that pins the new tag.
+# `workflow_dispatch` is the dry run: it builds and attests the same assets from the selected ref and keeps them as
+# a workflow artifact; it creates no release and tells no one.
 name: Release
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
+# Each job asks for what it needs; the workflow itself holds nothing.
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
 
 jobs:
   release-please:
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       release_created: ${{ steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp.outputs.tag_name }}
     steps:
-      # Author the release PR with the personal-stack-agents App token (not the
-      # default GITHUB_TOKEN) so CI runs on the PR without a manual approval
-      # gate. Best-effort: falls back to GITHUB_TOKEN when the App secrets or
-      # installation are absent.
+      # Author the release PR with the release App token (not the default GITHUB_TOKEN) so CI runs on the PR
+      # without a manual approval gate. Best-effort: falls back to GITHUB_TOKEN when the App secrets are absent.
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
         continue-on-error: true
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: rp
         with:
@@ -41,12 +51,159 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  publish:
+      # release-please cannot edit Cargo.lock, so the release PR would fail every `--locked` build. Refresh the
+      # workspace crates' own lock entries on the release branch, with the App token so that CI runs on the commit.
+      - if: ${{ steps.rp.outputs.pr != '' && steps.rp.outputs.pr != 'null' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ fromJSON(steps.rp.outputs.pr || '{}').headBranchName }}
+          persist-credentials: false
+      - if: ${{ steps.rp.outputs.pr != '' && steps.rp.outputs.pr != 'null' }}
+        uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
+        with:
+          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
+      - if: ${{ steps.rp.outputs.pr != '' && steps.rp.outputs.pr != 'null' }}
+        name: Refresh the lock entries of the workspace crates
+        env:
+          PUSH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ fromJSON(steps.rp.outputs.pr || '{}').headBranchName }}
+        run: |
+          set -euo pipefail
+          cargo update --workspace
+          cargo update --workspace --manifest-path fuzz/Cargo.toml
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): refresh the workspace lock entries"
+          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/${BRANCH}"
+
+  build:
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
-    runs-on: ubuntu-latest
+    # After a release is created from main, or on demand for the dry run.
+    if: ${{ !cancelled() && ((github.event_name == 'push' && needs.release-please.outputs.release_created == 'true') || github.event_name == 'workflow_dispatch') }}
+    name: Build (${{ matrix.asset }})
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: ttwright-x86_64-unknown-linux-gnu
+          - os: windows-latest
+            asset: ttwright-x86_64-pc-windows-msvc.exe
+          - os: macos-latest
+            asset: ttwright-universal-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
-      # Release binaries, SHA256SUMS and build provenance attach here (see the toolbox plan, Phase 5).
-      - run: echo 'Released ttwright-rs at ${{ needs.release-please.outputs.tag_name }}'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name || github.ref }}
+          persist-credentials: false
+      - uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
+        with:
+          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
+      - name: Build
+        shell: bash
+        env:
+          ASSET: ${{ matrix.asset }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          case "$ASSET" in
+            *apple-darwin)
+              rustup target add x86_64-apple-darwin aarch64-apple-darwin
+              cargo build --release --locked -p ttwright-cli --target x86_64-apple-darwin
+              cargo build --release --locked -p ttwright-cli --target aarch64-apple-darwin
+              lipo -create -output "dist/$ASSET" \
+                target/x86_64-apple-darwin/release/ttwright target/aarch64-apple-darwin/release/ttwright
+              lipo -info "dist/$ASSET"
+              ;;
+            *.exe)
+              cargo build --release --locked -p ttwright-cli
+              cp target/release/ttwright.exe "dist/$ASSET"
+              ;;
+            *)
+              cargo build --release --locked -p ttwright-cli
+              cp target/release/ttwright "dist/$ASSET"
+              ;;
+          esac
+      - name: Smoke test
+        shell: bash
+        env:
+          ASSET: ${{ matrix.asset }}
+        run: |
+          set -euo pipefail
+          chmod +x "dist/$ASSET" || true
+          "dist/$ASSET" --version
+          "dist/$ASSET" contracts --json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 7
+
+  assets:
+    needs: [release-please, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name || github.ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: binaries
+          merge-multiple: true
+      - name: Gather the assets
+        run: scripts/release-assets.sh binaries dist
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Upload to the release
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Keep the assets of a dry run
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets-dry-run
+          path: dist/
+          retention-days: 7
+
+  # The Toolbox's component-bump.yml opens the pull request that moves its ttwright-rs pin to the new tag.
+  toolbox:
+    needs: [release-please, assets]
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.assets.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: rauls-trusty-toolbox
+          permission-contents: write
+      - name: Tell the Toolbox
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          gh api repos/JorisJonkers-dev/rauls-trusty-toolbox/dispatches \
+            -f event_type=component-release -f 'client_payload[component]=ttwright-rs' -f "client_payload[tag]=$TAG"
