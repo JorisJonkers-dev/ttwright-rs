@@ -26,8 +26,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Named repository-hygiene so its checks keep the names the branch ruleset requires
+  # ("repository-hygiene / Agent Attribution Guard").
   hygiene:
-    name: Hygiene
+    name: repository-hygiene
     if: ${{ github.event_name == 'pull_request' }}
     permissions:
       contents: read
