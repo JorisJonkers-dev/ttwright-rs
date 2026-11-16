@@ -6,8 +6,15 @@ Nothing resolves or releases from a moving branch: `main` is an integration bran
    `fix:`, `chore:`, `feat!:` or `BREAKING CHANGE:` for majors).
 2. `release.yml` (release-please) maintains a release pull request. Merging it tags `vX.Y.Z`,
    writes `CHANGELOG.md` and bumps `.release-please-manifest.json`.
-3. The published release carries the platform packages, checksums, SBOM and build provenance
-   (see the toolbox plan, Phase 5).
+3. The published release carries the `ttwright` binaries for Linux x86_64, Windows x86_64 and macOS
+   (universal), the Contract schemas (`ttwright-result.v1.json`, `ttwright-events.v1.json`,
+   `ttwright-contracts.v1.json`) and `SHA256SUMS`, with a build provenance attestation over all of
+   them (`gh attestation verify <file> --repo JorisJonkers-dev/ttwright-rs`).
+4. The release workflow then sends `component-release` to the Toolbox, whose Component bump workflow
+   opens the pull request that pins the new tag in `known-good.toml`.
+
+A dry run (Actions, Release, Run workflow) builds and attests the same assets from any branch and
+keeps them as a workflow artifact, without a release.
 
 SemVer: before 1.0 a minor bump is the breaking lever (`bump-minor-pre-major`).
 
