@@ -1,93 +1,57 @@
-[package]
-name = "ttw_installer"
+[workspace]
+resolver = "3"
+members = [
+    "crates/ttwright-core",
+    "crates/ttwright-cli",
+    "crates/ttwright-contract",
+    "crates/ttwright-testkit",
+]
+# fuzz/ and tools/coverage-gate are their own workspaces (libfuzzer-sys and the gate stay out of the shipped crates).
+exclude = ["fuzz", "tools"]
+
+[workspace.package]
 version = "0.2.0"
 edition = "2024"
 rust-version = "1.100"
-description = "Tale of Two Wastelands Linux Installer"
-authors = ["Sulfur Nitride"]
 license = "GPL-3.0-only"
+authors = ["Sulfur Nitride", "Joris Jonkers"]
+repository = "https://github.com/JorisJonkers-dev/ttwright-rs"
+publish = false
 
-[dependencies]
-# BSA handling
-ba2 = "3.0.1"
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
 
-# Error handling
+[workspace.dependencies]
+ttwright-core = { path = "crates/ttwright-core" }
+ttwright-contract = { path = "crates/ttwright-contract" }
+ttwright-testkit = { path = "crates/ttwright-testkit" }
+
 anyhow = "1.0"
-
-# Compression
-lz4_flex = "0.13"
-
-# Audio decoding (pure Rust)
-symphonia = { version = "0.5", features = ["ogg", "wav", "pcm", "vorbis", "mp3"] }
-
-# Resampling (pure Rust)
-rubato = "0.16"
-
-# WAV writing (pure Rust)
+ba2 = "3.0.1"
+chrono = "0.4"
+clap = { version = "4.0", features = ["derive"] }
+crossbeam-channel = "0.5"
+ctrlc = "3.4"
+dirs = "6.0"
+hex = "0.4"
 hound = "3.5"
-
-# OGG/Vorbis encoding (C bindings, bundled)
-vorbis_rs = "0.5"
-
-# MP3 encoding (LAME C bindings)
+indicatif = "0.18"
+libc = "0.2"
+lz4_flex = "0.13"
+md-5 = "0.10"
 mp3lame-encoder = "0.2"
-
-# Optional in-process FFmpeg audio backend for benchmarking.
-ffmpeg-next = { version = "8.1", optional = true }
-
-# Serialization (for MPI parsing)
+oxidelta = { version = "0.1", default-features = false, features = ["zlib-secondary"] }
+rayon = "1.10"
+rubato = "0.16"
+rusqlite = { version = "0.41", features = ["bundled"] }
+schemars = { version = "1.2.1", default-features = false, features = ["derive", "std"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-# CLI
-clap = { version = "4.0", features = ["derive"] }
-
-# Parallel processing
-rayon = "1.10"
-crossbeam-channel = "0.5"
-
-# System info (for memory detection)
-sysinfo = "0.39"
-
-# File utilities
-walkdir = "2.5"
-
-# VCDIFF/xdelta3 patching (pure Rust, no subprocess needed)
-oxidelta = { version = "0.1", default-features = false, features = ["zlib-secondary"] }
-
-# Hashing
 sha1 = "0.10"
-md-5 = "0.10"
-hex = "0.4"
-
-# Path handling
-dirs = "6.0"
-
-# Progress bars
-indicatif = "0.18"
-
-# Logging
+symphonia = { version = "0.5", features = ["ogg", "wav", "pcm", "vorbis", "mp3"] }
+sysinfo = "0.39"
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2.4"
-chrono = "0.4"
-
-# SQLite for BSA caching (reduces RAM usage)
-rusqlite = { version = "0.41", features = ["bundled"] }
-
-# Platform-specific (must be at end to not break other deps)
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
-[features]
-default = []
-ffmpeg-audio = ["dep:ffmpeg-next"]
-
-# Only builds with the optional in-process FFmpeg backend enabled.
-[[example]]
-name = "bench_ffmpeg_lib_audio"
-required-features = ["ffmpeg-audio"]
-
-[[bin]]
-name = "mpi_installer"
-path = "src/app/cli.rs"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+vorbis_rs = "0.5"
+walkdir = "2.5"

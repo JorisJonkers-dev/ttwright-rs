@@ -6,19 +6,24 @@
 }:
 rustPlatform.buildRustPackage {
   pname = "ttwright";
-  version = "0.2.0";
+  version = "0.2.0"; # x-release-please-version
 
   src = lib.fileset.toSource {
     root = ./.;
     fileset = lib.fileset.unions [
       ./Cargo.toml
       ./Cargo.lock
-      ./src
-      ./examples
+      ./crates
+      ./contracts
     ];
   };
 
   cargoLock.lockFile = ./Cargo.lock;
+
+  cargoBuildFlags = ["-p" "ttwright-cli"];
+  # The tests run in CI; they build fixtures in the temporary folder, which the sandbox allows, but they
+  # double the build time of the package.
+  doCheck = false;
 
   nativeBuildInputs = [pkg-config];
 
@@ -30,6 +35,6 @@ rustPlatform.buildRustPackage {
     homepage = "https://github.com/JorisJonkers-dev/ttwright-rs";
     license = lib.licenses.gpl3Only;
     platforms = lib.platforms.linux;
-    mainProgram = "mpi_installer";
+    mainProgram = "ttwright";
   };
 }

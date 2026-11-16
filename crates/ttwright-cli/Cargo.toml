@@ -1,0 +1,30 @@
+[package]
+name = "ttwright-cli"
+description = "The ttwright command: install, inspect and verify MPI packages, with JSON result and event Contracts."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "ttwright"
+path = "src/main.rs"
+
+[dependencies]
+ttwright-core = { workspace = true }
+ttwright-contract = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+ctrlc = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+ttwright-testkit = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

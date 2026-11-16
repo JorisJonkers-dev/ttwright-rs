@@ -1,14 +1,25 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "bootstrap-sha": "bc8a951d5b6e4c4f69a4110dc79cc0fec8fb22eb",
-  "release-type": "rust",
+  "release-type": "simple",
   "packages": {
     ".": {
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,
       "bump-minor-pre-major": true,
       "draft": false,
-      "prerelease": false
+      "prerelease": false,
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "Cargo.toml",
+          "jsonpath": "$.workspace.package.version"
+        },
+        {
+          "type": "generic",
+          "path": "package.nix"
+        }
+      ]
     }
   }
 }

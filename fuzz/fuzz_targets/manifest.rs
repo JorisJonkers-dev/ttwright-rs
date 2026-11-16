@@ -3,7 +3,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use ttw_installer::{ManifestLoader, TtwManifest};
+use ttwright_core::{ManifestLoader, TtwManifest};
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(manifest) = serde_json::from_slice::<TtwManifest>(data) {

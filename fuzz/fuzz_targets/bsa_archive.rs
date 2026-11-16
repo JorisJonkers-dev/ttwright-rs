@@ -3,7 +3,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use ttw_installer::BsaHandler;
+use ttwright_core::BsaHandler;
 
 fuzz_target!(|data: &[u8]| {
     // The first line names the file to look up, the rest is the archive.

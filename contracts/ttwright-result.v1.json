@@ -1,0 +1,342 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ResultDoc",
+  "description": "Result v1.",
+  "type": "object",
+  "properties": {
+    "archives": {
+      "description": "Archives (BSA) written.",
+      "$ref": "#/$defs/Counts"
+    },
+    "assets": {
+      "description": "Asset operations (copy, new, patch, audio).",
+      "$ref": "#/$defs/Counts"
+    },
+    "checks_passed": {
+      "description": "Whether every pre-installation check of the manifest passed (the game copies are the expected ones).",
+      "type": "boolean"
+    },
+    "contract": {
+      "description": "Always `ttwright-result`: a reader refuses a document that names another Contract.",
+      "type": "string",
+      "const": "ttwright-result"
+    },
+    "dry_run": {
+      "description": "A dry run reads everything and writes nothing.",
+      "type": "boolean"
+    },
+    "elapsed_ms": {
+      "description": "Wall time in milliseconds.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "error": {
+      "description": "Set unless the status is `success`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ErrorInfo"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "exit_code": {
+      "description": "The process exit code.",
+      "type": "integer",
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0
+    },
+    "log_file": {
+      "description": "The log file of the run, when one was written.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "messages": {
+      "description": "Up to twenty lines on what went wrong in detail (a failed asset, a failed check).",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    },
+    "output_dir": {
+      "description": "The destination folder.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "package": {
+      "description": "The package, once its manifest was read.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PackageInfo"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "post_install": {
+      "description": "Post-installation commands (rename, delete) and file times.",
+      "$ref": "#/$defs/Counts"
+    },
+    "resumed": {
+      "description": "Whether this run continued an interrupted one.",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "description": "The document version; 1.",
+      "type": "integer",
+      "format": "uint32",
+      "const": 1,
+      "minimum": 0
+    },
+    "status": {
+      "description": "How the run ended.",
+      "$ref": "#/$defs/Status"
+    },
+    "tool": {
+      "description": "The tool that printed this document.",
+      "$ref": "#/$defs/ToolInfo"
+    }
+  },
+  "required": [
+    "schema_version",
+    "contract",
+    "tool",
+    "status",
+    "exit_code",
+    "checks_passed",
+    "assets",
+    "archives",
+    "post_install",
+    "resumed",
+    "dry_run",
+    "elapsed_ms"
+  ],
+  "$defs": {
+    "Counts": {
+      "description": "Done and failed counts of one kind of work.",
+      "type": "object",
+      "properties": {
+        "done": {
+          "description": "Items done in this run.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "failed": {
+          "description": "Items that failed.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "resumed": {
+          "description": "Items done by an earlier, interrupted run and kept (`--resume`).",
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        },
+        "total": {
+          "description": "Items in the package.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "total",
+        "done",
+        "failed"
+      ]
+    },
+    "ErrorCode": {
+      "description": "Why a run did not succeed.",
+      "oneOf": [
+        {
+          "description": "The arguments are wrong (exit code 2).",
+          "type": "string",
+          "const": "usage"
+        },
+        {
+          "description": "The MPI package path does not exist.",
+          "type": "string",
+          "const": "mpi_not_found"
+        },
+        {
+          "description": "The MPI package cannot be read: not an archive, or truncated.",
+          "type": "string",
+          "const": "mpi_invalid"
+        },
+        {
+          "description": "The package has no manifest (`_package/index.json`).",
+          "type": "string",
+          "const": "manifest_missing"
+        },
+        {
+          "description": "The manifest is not valid JSON or does not have the manifest's shape.",
+          "type": "string",
+          "const": "manifest_invalid"
+        },
+        {
+          "description": "The manifest uses a feature this build does not implement; `feature` names it. Nothing was written.",
+          "type": "string",
+          "const": "unsupported_feature"
+        },
+        {
+          "description": "The package is a TTW version this build does not support; `feature` names the version.",
+          "type": "string",
+          "const": "unsupported_version"
+        },
+        {
+          "description": "The manifest needs a game copy that was not given (`--fo3`, `--fnv`, `--oblivion`); `feature` names it.",
+          "type": "string",
+          "const": "game_path_missing"
+        },
+        {
+          "description": "A game copy that was given does not exist or is not that game.",
+          "type": "string",
+          "const": "game_not_found"
+        },
+        {
+          "description": "A pre-installation check of the manifest failed (missing or modified game file, too little space).",
+          "type": "string",
+          "const": "check_failed"
+        },
+        {
+          "description": "One or more asset operations failed.",
+          "type": "string",
+          "const": "asset_failed"
+        },
+        {
+          "description": "One or more archives (BSA) could not be written.",
+          "type": "string",
+          "const": "archive_failed"
+        },
+        {
+          "description": "A post-installation command failed.",
+          "type": "string",
+          "const": "post_command_failed"
+        },
+        {
+          "description": "`--resume` was asked, but the journal in the destination belongs to another package or another set of\ngame copies.",
+          "type": "string",
+          "const": "resume_mismatch"
+        },
+        {
+          "description": "The run was cancelled; `--resume` continues it.",
+          "type": "string",
+          "const": "cancelled"
+        },
+        {
+          "description": "A file could not be read or written.",
+          "type": "string",
+          "const": "io"
+        },
+        {
+          "description": "A fault in ttwright itself.",
+          "type": "string",
+          "const": "internal"
+        }
+      ]
+    },
+    "ErrorInfo": {
+      "description": "Why the run did not succeed.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "description": "The stable code callers match on.",
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "feature": {
+          "description": "For `unsupported_feature`, `unsupported_version` and `game_path_missing`: what is missing, for example\n`asset_op:3` or `variable:%XYZ%`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "description": "Prose for people; never matched on.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "PackageInfo": {
+      "description": "The package that was installed, from its manifest.",
+      "type": "object",
+      "properties": {
+        "supported": {
+          "description": "Whether this build lists the package and version as supported (`ttwright contracts --json`).",
+          "type": "boolean"
+        },
+        "title": {
+          "description": "The manifest's title.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The manifest's version, as written there.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "version",
+        "supported"
+      ]
+    },
+    "Status": {
+      "description": "How a run ended.",
+      "oneOf": [
+        {
+          "description": "Installed; exit code 0.",
+          "type": "string",
+          "const": "success"
+        },
+        {
+          "description": "Failed; exit code 1 (2 for a usage error).",
+          "type": "string",
+          "const": "failed"
+        },
+        {
+          "description": "The package needs a feature or is a version this build does not support; exit code 3. Nothing was written.",
+          "type": "string",
+          "const": "unsupported"
+        },
+        {
+          "description": "Cancelled; exit code 4. `--resume` continues from the journal.",
+          "type": "string",
+          "const": "cancelled"
+        }
+      ]
+    },
+    "ToolInfo": {
+      "description": "The tool that printed a document.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Always `ttwright`.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The release version, for example `0.3.0`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    }
+  }
+}

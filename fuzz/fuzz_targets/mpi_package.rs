@@ -3,7 +3,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use ttw_installer::MpiStore;
+use ttwright_core::MpiStore;
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(store) = MpiStore::from_bytes(data) {
