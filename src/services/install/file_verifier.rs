@@ -1,12 +1,12 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use md5::Md5;
 use sha1::{Digest, Sha1};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::models::Check;
-use crate::services::path_utils::safe_join;
 use crate::services::LocationResolver;
+use crate::services::path_utils::safe_join;
 
 /// Check types from MPI manifest
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,9 +1,9 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
+use ba2::CompressableFrom;
 use ba2::tes4::{
     Archive, ArchiveFlags, ArchiveKey, ArchiveOptions, ArchiveTypes, Directory, DirectoryKey,
     File as BsaFile, Version,
 };
-use ba2::CompressableFrom;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs;
@@ -64,12 +64,12 @@ impl BsaBuilder {
         // Oblivion uses v103, Fallout 3/NV use v104
         if name_lower.contains("oblivion") || name_lower.contains("shiveringisles") {
             self.version = Version::v103; // Oblivion
-                                          // Oblivion BSA flags - NO compression for decompressed output
-                                          // Use minimal flags: directory strings + file strings only
+            // Oblivion BSA flags - NO compression for decompressed output
+            // Use minimal flags: directory strings + file strings only
             self.archive_flags = ArchiveFlags::DIRECTORY_STRINGS | ArchiveFlags::FILE_STRINGS;
         } else {
             self.version = Version::v104; // Fallout 3/NV (default)
-                                          // Keep default FO3/FNV flags with compression
+            // Keep default FO3/FNV flags with compression
         }
 
         self.archive_types = if name_lower.contains("meshes") {

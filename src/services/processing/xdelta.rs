@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -120,16 +120,16 @@ impl XdeltaManager {
             }
         }
 
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                for rel_path in &["../../tools", "../tools"] {
-                    let p = exe_dir.join(rel_path).join(binary_name);
-                    if p.exists() {
-                        #[cfg(unix)]
-                        Self::try_make_executable(&p);
-                        if Self::test_binary(&p) {
-                            return Some(p.canonicalize().unwrap_or(p));
-                        }
+        if let Ok(exe_path) = std::env::current_exe()
+            && let Some(exe_dir) = exe_path.parent()
+        {
+            for rel_path in &["../../tools", "../tools"] {
+                let p = exe_dir.join(rel_path).join(binary_name);
+                if p.exists() {
+                    #[cfg(unix)]
+                    Self::try_make_executable(&p);
+                    if Self::test_binary(&p) {
+                        return Some(p.canonicalize().unwrap_or(p));
                     }
                 }
             }

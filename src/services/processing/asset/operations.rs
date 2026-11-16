@@ -42,20 +42,20 @@ impl AssetProcessor {
         let normalized = normalized.trim_start_matches("./").trim_start_matches('/');
 
         // Try in-memory store first (instant HashMap lookup)
-        if let Some(ref store) = self.mpi_store {
-            if let Some(data) = store.get(normalized) {
-                return Ok(data.to_vec());
-            }
+        if let Some(ref store) = self.mpi_store
+            && let Some(data) = store.get(normalized)
+        {
+            return Ok(data.to_vec());
         }
 
         // Disk-backed installs use a one-time lowercase index. MPI archive
         // names are lowercased during extraction, while the manifest retains
         // its original Windows casing.
-        if let Some(ref index) = self.mpi_index {
-            if let Some(actual_path) = index.get(normalized) {
-                return fs::read(actual_path)
-                    .with_context(|| format!("Failed to read: {}", actual_path.display()));
-            }
+        if let Some(ref index) = self.mpi_index
+            && let Some(actual_path) = index.get(normalized)
+        {
+            return fs::read(actual_path)
+                .with_context(|| format!("Failed to read: {}", actual_path.display()));
         }
 
         // Fallback for callers that do not provide an index.
@@ -247,10 +247,10 @@ impl AssetProcessor {
         // Try to get from target path extension
         let target_file = asset.target_path.as_deref().unwrap_or(&asset.source_path);
 
-        if let Some(ext) = Path::new(target_file).extension().and_then(|e| e.to_str()) {
-            if let Some(format) = AudioFormat::from_extension(ext) {
-                return Ok(format);
-            }
+        if let Some(ext) = Path::new(target_file).extension().and_then(|e| e.to_str())
+            && let Some(format) = AudioFormat::from_extension(ext)
+        {
+            return Ok(format);
         }
 
         // Default to OGG

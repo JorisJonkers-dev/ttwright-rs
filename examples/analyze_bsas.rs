@@ -1,5 +1,5 @@
-use ba2::tes4::Archive;
 use ba2::Reader;
+use ba2::tes4::Archive;
 use std::path::Path;
 
 fn analyze_bsa(path: &Path) -> (usize, usize, usize) {

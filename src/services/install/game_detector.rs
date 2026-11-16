@@ -251,10 +251,10 @@ fn detect_heroic_gog(heroic_root: &Path, detected: &mut Vec<DetectedGame>) {
             .and_then(Value::as_str)
             .map(PathBuf::from);
         let title = game.get("title").and_then(Value::as_str).unwrap_or("");
-        if let Some(path) = install_path {
-            if let Some(kind) = classify_title_or_path(title, &path) {
-                push_if_valid(detected, kind, path, "Heroic (GOG)");
-            }
+        if let Some(path) = install_path
+            && let Some(kind) = classify_title_or_path(title, &path)
+        {
+            push_if_valid(detected, kind, path, "Heroic (GOG)");
         }
     }
 }
@@ -277,10 +277,10 @@ fn detect_heroic_epic(heroic_root: &Path, detected: &mut Vec<DetectedGame>) {
                 .and_then(Value::as_str)
                 .map(PathBuf::from);
             let title = game.get("title").and_then(Value::as_str).unwrap_or("");
-            if let Some(path) = install_path {
-                if let Some(kind) = classify_title_or_path(title, &path) {
-                    push_if_valid(detected, kind, path, "Heroic (Epic)");
-                }
+            if let Some(path) = install_path
+                && let Some(kind) = classify_title_or_path(title, &path)
+            {
+                push_if_valid(detected, kind, path, "Heroic (Epic)");
             }
         }
     }

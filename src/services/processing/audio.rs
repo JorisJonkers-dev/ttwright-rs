@@ -4,14 +4,14 @@ use std::num::NonZero;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use hound::{SampleFormat, WavSpec, WavWriter};
 use mp3lame_encoder::{Builder, DualPcm, FlushNoGap, InterleavedPcm};
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 use symphonia::core::audio::AudioBufferRef;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_VORBIS};
+use symphonia::core::codecs::{CODEC_TYPE_VORBIS, DecoderOptions};
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
@@ -49,16 +49,16 @@ impl AudioProcessor {
     pub fn with_params(mut self, params: &str) -> Self {
         for token in params.split_whitespace() {
             if let Some(freq_str) = token.strip_prefix("-f:") {
-                if let Ok(freq) = freq_str.parse::<u32>() {
-                    if freq > 0 {
-                        self.target_sample_rate = freq;
-                    }
+                if let Ok(freq) = freq_str.parse::<u32>()
+                    && freq > 0
+                {
+                    self.target_sample_rate = freq;
                 }
-            } else if let Some(q_str) = token.strip_prefix("-q:") {
-                if let Ok(q) = q_str.parse::<f32>() {
-                    // OggEnc2 quality scale: 0-10 maps to vorbis -0.1 to 1.0
-                    self.ogg_quality = (q / 10.0).clamp(-0.1, 1.0);
-                }
+            } else if let Some(q_str) = token.strip_prefix("-q:")
+                && let Ok(q) = q_str.parse::<f32>()
+            {
+                // OggEnc2 quality scale: 0-10 maps to vorbis -0.1 to 1.0
+                self.ogg_quality = (q / 10.0).clamp(-0.1, 1.0);
             }
         }
         self
@@ -108,7 +108,7 @@ impl AudioProcessor {
                 Err(symphonia::core::errors::Error::IoError(e))
                     if e.kind() == std::io::ErrorKind::UnexpectedEof =>
                 {
-                    break
+                    break;
                 }
                 Err(e) => return Err(e.into()),
             };
@@ -170,7 +170,7 @@ impl AudioProcessor {
                 Err(symphonia::core::errors::Error::IoError(e))
                     if e.kind() == std::io::ErrorKind::UnexpectedEof =>
                 {
-                    break
+                    break;
                 }
                 Err(e) => return Err(e.into()),
             };

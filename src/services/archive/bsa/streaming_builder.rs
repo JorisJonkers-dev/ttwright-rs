@@ -1,16 +1,16 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
+use ba2::CompressableFrom;
 use ba2::tes4::{
     Archive, ArchiveFlags, ArchiveKey, ArchiveOptions, ArchiveTypes, Directory, DirectoryKey,
     File as BsaFile, Version,
 };
-use ba2::CompressableFrom;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read as IoRead, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 /// Entry metadata for a file in the staging area
 #[derive(Clone)]
