@@ -73,7 +73,7 @@ tracing-appender = "0.2.4"
 chrono = "0.4"
 
 # SQLite for BSA caching (reduces RAM usage)
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 
 # Platform-specific (must be at end to not break other deps)
 [target.'cfg(unix)'.dependencies]

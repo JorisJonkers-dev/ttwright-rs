@@ -1,0 +1,7 @@
+# Tooling for the checks; `mise install` is the only setup step. The Rust toolchain is pinned by
+# rust-toolchain.toml (1.100.0) and is not listed here.
+[tools]
+actionlint = "1.7.12"
+"aqua:EmbarkStudios/cargo-deny" = "0.20.2"
+"aqua:rustsec/rustsec/cargo-audit" = "0.22.2"
+"aqua:taiki-e/cargo-llvm-cov" = "0.8.5"

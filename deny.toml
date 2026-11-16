@@ -1,0 +1,59 @@
+# cargo-deny configuration: licences, bans, sources and advisories. Run with `cargo deny --locked check`.
+# ttwright-rs is GPL-3.0-only (upstream's licence); every third-party licence allowed below is compatible with it.
+# Nothing is "allowed by default": a licence not listed is refused. LGPL and AGPL stay out.
+
+[graph]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "aarch64-apple-darwin", "x86_64-apple-darwin"]
+all-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+version = 2
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Add RUSTSEC ids here only with a comment saying why the advisory does not apply.
+ignore = []
+yanked = "warn"
+
+[licenses]
+version = 2
+allow = [
+    "GPL-3.0-only",
+    "MPL-2.0",
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unicode-3.0",
+    "CC0-1.0",
+]
+confidence-threshold = 0.8
+# LAME, the MP3 encoder, is LGPL-3.0. The LGPL-3.0 is compatible with the GPL-3.0, and a GPL-3.0-only binary may
+# link it; the TTW package asks for MP3 output, so there is no MP3 encoder to replace it with. Only these two crates.
+exceptions = [
+    { allow = ["LGPL-3.0"], crate = "mp3lame-encoder" },
+    { allow = ["LGPL-3.0"], crate = "mp3lame-sys" },
+]
+
+# The crates of this repository are publish = false; their licence is the repository's (LICENSE).
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
