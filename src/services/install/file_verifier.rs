@@ -463,7 +463,10 @@ fn get_available_space(path: &Path) -> Result<u64> {
             let stat = unsafe { stat.assume_init() };
             // f_bavail = blocks available to unprivileged users
             // f_frsize = fragment size (actual block size)
-            let available = stat.f_bavail * stat.f_frsize;
+            // The field widths differ per platform (u32 blocks on macOS, u64 on Linux); widen both before
+            // multiplying so the product cannot overflow either.
+            #[allow(clippy::useless_conversion)]
+            let available = u64::from(stat.f_bavail) * u64::from(stat.f_frsize);
             Ok(available)
         } else {
             bail!("statvfs failed for {}", check_path.display())
