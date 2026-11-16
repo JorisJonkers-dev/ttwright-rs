@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, bail};
 use ba2::tes4::Archive;
-use ba2::{ByteSlice, Reader};
+use ba2::{Borrowed, ByteSlice, Reader};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -33,44 +33,17 @@ impl BsaHandler {
         // Open archive fresh each time (avoids lifetime issues with caching)
         let (archive, options) = Archive::read(bsa_path)
             .with_context(|| format!("Failed to open BSA: {}", bsa_path.display()))?;
-        let compression_options: ba2::tes4::FileCompressionOptions = (&options).into();
+        find_in_archive(&archive, &options, file_path)
+    }
 
-        // Normalize path separators (BSA uses backslashes)
-        let normalized_path = file_path.replace('/', "\\");
-
-        // Parse directory and file name
-        let (dir_name, file_name) = if let Some(idx) = normalized_path.rfind('\\') {
-            (&normalized_path[..idx], &normalized_path[idx + 1..])
-        } else {
-            ("", normalized_path.as_str())
-        };
-
-        // Search for the file
-        for (dir_key, folder) in archive.iter() {
-            let current_dir = String::from_utf8_lossy(dir_key.name().as_bytes());
-
-            if current_dir.eq_ignore_ascii_case(dir_name) {
-                for (file_key, file) in folder.iter() {
-                    let current_file = String::from_utf8_lossy(file_key.name().as_bytes());
-
-                    if current_file.eq_ignore_ascii_case(file_name) {
-                        let data = if file.is_decompressed() {
-                            file.as_bytes().to_vec()
-                        } else {
-                            file.decompress(&compression_options)?.as_bytes().to_vec()
-                        };
-                        return Ok(data);
-                    }
-                }
-            }
-        }
-
-        bail!(
-            "File not found in BSA: {} (searched for dir='{}', file='{}')",
-            file_path,
-            dir_name,
-            file_name
-        );
+    /// Extract a file from a BSA archive held in memory.
+    ///
+    /// # Errors
+    /// When the bytes are not a BSA, or the file is not in it or does not decompress.
+    pub fn extract_from_bytes(bytes: &[u8], file_path: &str) -> Result<Vec<u8>> {
+        let (archive, options) =
+            Archive::read(Borrowed(bytes)).context("Failed to open BSA from memory")?;
+        find_in_archive(&archive, &options, file_path)
     }
 
     /// Check if a file exists in a BSA archive
@@ -291,5 +264,112 @@ impl BsaExtractCache {
 impl Default for BsaExtractCache {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Find `file_path` (either separator, any case) in an open archive and return its decompressed bytes.
+fn find_in_archive(
+    archive: &Archive<'_>,
+    options: &ba2::tes4::ArchiveOptions,
+    file_path: &str,
+) -> Result<Vec<u8>> {
+    let compression_options: ba2::tes4::FileCompressionOptions = options.into();
+
+    // Normalize path separators (BSA uses backslashes)
+    let normalized_path = file_path.replace('/', "\\");
+
+    // Parse directory and file name
+    let (dir_name, file_name) = if let Some(idx) = normalized_path.rfind('\\') {
+        (&normalized_path[..idx], &normalized_path[idx + 1..])
+    } else {
+        ("", normalized_path.as_str())
+    };
+
+    // Search for the file
+    for (dir_key, folder) in archive.iter() {
+        let current_dir = String::from_utf8_lossy(dir_key.name().as_bytes());
+
+        if current_dir.eq_ignore_ascii_case(dir_name) {
+            for (file_key, file) in folder.iter() {
+                let current_file = String::from_utf8_lossy(file_key.name().as_bytes());
+
+                if current_file.eq_ignore_ascii_case(file_name) {
+                    let data = if file.is_decompressed() {
+                        file.as_bytes().to_vec()
+                    } else {
+                        file.decompress(&compression_options)?.as_bytes().to_vec()
+                    };
+                    return Ok(data);
+                }
+            }
+        }
+    }
+
+    bail!(
+        "File not found in BSA: {} (searched for dir='{}', file='{}')",
+        file_path,
+        dir_name,
+        file_name
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BsaHandler;
+    use crate::services::BsaBuilder;
+
+    fn synthetic_bsa(compressed: bool) -> Vec<u8> {
+        let mut builder = BsaBuilder::new();
+        if !compressed {
+            builder = builder.with_flags(0x3);
+        }
+        builder.add_file("meshes\\synthetic\\cube.nif", b"cube".to_vec());
+        builder.add_file("textures/synthetic/a.dds", vec![7u8; 4096]);
+        builder.build_to_bytes().unwrap()
+    }
+
+    #[test]
+    fn a_file_reads_back_from_an_archive_in_memory() {
+        for compressed in [true, false] {
+            let bytes = synthetic_bsa(compressed);
+            assert_eq!(
+                BsaHandler::extract_from_bytes(&bytes, "Meshes/Synthetic/CUBE.nif").unwrap(),
+                b"cube"
+            );
+            assert_eq!(
+                BsaHandler::extract_from_bytes(&bytes, "textures\\synthetic\\a.dds").unwrap(),
+                vec![7u8; 4096]
+            );
+        }
+    }
+
+    #[test]
+    fn a_missing_file_and_garbage_are_errors() {
+        let bytes = synthetic_bsa(true);
+        let err = BsaHandler::extract_from_bytes(&bytes, "meshes/none.nif").unwrap_err();
+        assert!(err.to_string().contains("not found"), "{err}");
+        assert!(BsaHandler::extract_from_bytes(b"not an archive", "a").is_err());
+        assert!(BsaHandler::extract_from_bytes(&bytes[..bytes.len() / 2], "a").is_err());
+    }
+
+    #[test]
+    fn a_file_on_disk_reads_back_and_is_counted() {
+        let dir = std::env::temp_dir().join(format!("ttwright_bsa_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("synthetic.bsa");
+        std::fs::write(&path, synthetic_bsa(true)).unwrap();
+        let mut handler = BsaHandler::new();
+        assert!(
+            handler
+                .file_exists(&path, "meshes/synthetic/cube.nif")
+                .unwrap()
+        );
+        assert!(
+            !handler
+                .file_exists(&path, "meshes/synthetic/none.nif")
+                .unwrap()
+        );
+        assert_eq!(handler.access_stats().values().sum::<usize>(), 2);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

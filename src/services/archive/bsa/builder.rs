@@ -7,7 +7,7 @@ use ba2::tes4::{
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs;
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
 /// Builder for creating BSA archives using ba2
@@ -123,6 +123,25 @@ impl BsaBuilder {
 
     /// Build and write the BSA archive to disk with parallel compression
     pub fn build(self, output_path: &Path) -> Result<()> {
+        let bytes = self.build_to_bytes()?;
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let file = fs::File::create(output_path)
+            .with_context(|| format!("Failed to create BSA file: {}", output_path.display()))?;
+        let mut writer = BufWriter::new(file);
+        writer
+            .write_all(&bytes)
+            .and_then(|()| writer.flush())
+            .with_context(|| format!("Failed to write BSA: {}", output_path.display()))?;
+        Ok(())
+    }
+
+    /// Build the BSA archive in memory, with parallel compression.
+    ///
+    /// # Errors
+    /// When the builder is empty or a file does not compress.
+    pub fn build_to_bytes(self) -> Result<Vec<u8>> {
         use ba2::tes4::FileCompressionOptions;
 
         if self.is_empty() {
@@ -194,19 +213,11 @@ impl BsaBuilder {
             .types(self.archive_types)
             .build();
 
-        if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let file = fs::File::create(output_path)
-            .with_context(|| format!("Failed to create BSA file: {}", output_path.display()))?;
-        let mut writer = BufWriter::new(file);
-
+        let mut bytes = Vec::new();
         archive
-            .write(&mut writer, &options)
-            .with_context(|| format!("Failed to write BSA: {}", output_path.display()))?;
-
-        Ok(())
+            .write(&mut bytes, &options)
+            .context("Failed to write BSA")?;
+        Ok(bytes)
     }
 }
 

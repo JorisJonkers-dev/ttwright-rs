@@ -1,0 +1,14 @@
+[package]
+name = "coverage-gate"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.100"
+license = "GPL-3.0-only"
+publish = false
+description = "Fails a change whose executable changed lines are less covered by tests than a minimum."
+
+# Its own workspace: a check tool of this repository, not part of the shipped crates. No dependencies.
+[workspace]
+
+[lints.rust]
+unsafe_code = "forbid"

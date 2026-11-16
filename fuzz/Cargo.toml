@@ -1,0 +1,41 @@
+[package]
+name = "ttwright-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1.0"
+ttw_installer = { path = ".." }
+
+# Own workspace root: keeps libfuzzer-sys out of the shipped crates and the root lockfile.
+[workspace]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "mpi_package"
+path = "fuzz_targets/mpi_package.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bsa_archive"
+path = "fuzz_targets/bsa_archive.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "manifest"
+path = "fuzz_targets/manifest.rs"
+test = false
+doc = false
+bench = false

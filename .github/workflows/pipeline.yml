@@ -1,0 +1,176 @@
+# One pipeline ending in "Pipeline Complete", the only required check (estate convention). The Linux checks are steps
+# of that one job; each carries `if: !cancelled()` so one failure still shows the rest. The reusable workflows
+# (hygiene, PR title, quarantine) and the Windows and macOS builds cannot be steps of a Linux job, so they are jobs
+# that its last step gates on.
+name: Pipeline
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A new commit on a branch cancels the older run. A title edit has its own group, so it neither cancels nor is
+# cancelled by a push. main is never cancelled, so every main commit has a finished run.
+concurrency:
+  group: pipeline-${{ github.ref == 'refs/heads/main' && github.sha || format('{0}-{1}', github.event.pull_request.number || github.ref, github.event.action == 'edited' && github.run_id || 'commits') }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Named repository-hygiene so its checks keep the names the branch ruleset requires
+  # ("repository-hygiene / Agent Attribution Guard").
+  hygiene:
+    name: repository-hygiene
+    if: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: JorisJonkers-dev/github-workflows/.github/workflows/repository-hygiene-guard.yml@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
+    with:
+      package-proxy-guard: enforce
+    secrets:
+      PACKAGES_PROXY_TOKEN: ${{ secrets.PACKAGES_PROXY_TOKEN }}
+
+  pr-title:
+    name: PR title
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: JorisJonkers-dev/github-workflows/.github/workflows/pr-title-check.yml@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
+
+  # A skipped test whose quarantine ran out, names no issue, or lasts over 14 days fails the build.
+  quarantine:
+    name: Quarantine
+    uses: JorisJonkers-dev/github-workflows/.github/workflows/quarantine-check.yml@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
+
+  # The installer must build and test natively on every platform the Toolbox ships (ADR-0006 of the Toolbox).
+  platforms:
+    name: Build and test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Crates come through the estate packages proxy (7-day minimum age); the hygiene guard requires it.
+      - uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
+        with:
+          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: cargo test --workspace --locked
+
+  pipeline-complete:
+    name: Pipeline Complete
+    needs: [hygiene, pr-title, quarantine, platforms]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Crates come through the estate packages proxy (7-day minimum age); the hygiene guard requires it.
+      - uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
+        with:
+          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5
+        with:
+          cache: true
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            . -> target
+            fuzz -> target
+            tools/coverage-gate -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Format
+        if: ${{ !cancelled() }}
+        run: |
+          cargo fmt --all --check
+          cargo fmt --all --check --manifest-path fuzz/Cargo.toml
+          cargo fmt --all --check --manifest-path tools/coverage-gate/Cargo.toml
+
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: |
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo clippy --all-targets --locked --manifest-path tools/coverage-gate/Cargo.toml -- -D warnings
+
+      # The tests run once, instrumented; the report feeds the changed-line gate below.
+      - name: Tests with coverage
+        id: tests
+        if: ${{ !cancelled() }}
+        run: mise exec -- cargo llvm-cov --workspace --locked --lcov --output-path lcov.info
+
+      # 70% of the executable lines a change adds or edits must run in a test (docs/COVERAGE.md).
+      - name: Changed-line coverage gate (70%)
+        if: ${{ !cancelled() && steps.tests.outcome == 'success' }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE:-}" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "No base commit to compare with: nothing to gate." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          cargo test --locked --manifest-path tools/coverage-gate/Cargo.toml
+          cargo run --quiet --locked --manifest-path tools/coverage-gate/Cargo.toml -- \
+            --lcov lcov.info --base "$BASE" --min 70 --summary "$GITHUB_STEP_SUMMARY"
+
+      # rust-version equals the pinned toolchain (1.100), so building with rust-toolchain.toml is the MSRV check;
+      # this step fails if a crate declares a different one or the toolchain file moves without it.
+      - name: MSRV
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          declared="$(cargo metadata --format-version 1 --no-deps | jq -r '[.packages[].rust_version] | unique | join(",")')"
+          pinned="$(sed -n 's/^channel = "\([0-9]*\.[0-9]*\)\.[0-9]*"/\1/p' rust-toolchain.toml)"
+          echo "rust-version: $declared, rust-toolchain.toml: $pinned"
+          test "$declared" = "$pinned"
+
+      - name: Fuzz harnesses compile
+        if: ${{ !cancelled() }}
+        run: cargo check --locked --manifest-path fuzz/Cargo.toml
+
+      - name: Licences, bans, sources and advisories
+        if: ${{ !cancelled() }}
+        run: |
+          mise exec -- cargo deny --locked check
+          mise exec -- cargo deny --locked --manifest-path fuzz/Cargo.toml check
+
+      - name: Advisories (cargo audit)
+        if: ${{ !cancelled() }}
+        run: mise exec -- cargo audit
+
+      - name: Lint GitHub Actions workflows
+        if: ${{ !cancelled() }}
+        run: mise exec -- actionlint -color .github/workflows/*.yml
+
+      # A job that did not succeed fails the gate, except the two that only run on pull requests.
+      - name: Gated jobs passed
+        if: ${{ !cancelled() }}
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          failed="$(jq -r 'to_entries[] | select(.value.result != "success") | select(.value.result != "skipped" or (.key | IN("hygiene", "pr-title") | not)) | "\(.key): \(.value.result)"' <<<"$NEEDS")"
+          if [ -n "$failed" ]; then echo "$failed"; exit 1; fi
