@@ -37,9 +37,6 @@
           rust-analyzer
           rustfmt
         ];
-
-        # cargo leaves the binary unpatched, so these come from the environment.
-        LD_LIBRARY_PATH = lib.makeLibraryPath self.packages.${system}.default.runtimeLibs;
       };
     });
   };
