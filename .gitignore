@@ -21,3 +21,20 @@ tools/xdelta3
 # Nix
 /result
 /result-*
+
+# Env / secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Agent worktrees and scratch
+.claude/worktrees/
+scratchpad/
+
+# Game data and mod archives never enter this repository. Fixtures are synthetic.
+*.esm
+*.esp
+*.bsa
+*.mpi
+*.7z
+*.rar

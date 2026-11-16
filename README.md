@@ -1,3 +1,5 @@
+> **This is the JorisJonkers-dev rewrite of [SulfurNitride/TTW_Linux_Installer](https://github.com/SulfurNitride/TTW_Linux_Installer)**, kept as `ttwright-rs`, a component of [Raul's tRusty Toolbox](https://github.com/JorisJonkers-dev/rauls-trusty-toolbox). The text below is upstream's README for now; see [FORK.md](FORK.md) for what differs. Report problems with this repository here, not upstream.
+
 <img width="1860" height="1516" alt="image" src="https://github.com/user-attachments/assets/f3aa1651-b304-4def-acfb-495610765ba2" />
 
 

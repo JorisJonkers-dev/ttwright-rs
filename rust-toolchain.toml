@@ -1,0 +1,5 @@
+# The one Rust compiler every build uses: this machine, agents and CI. 1.100.0 was released 2026-11-09 and is
+# taken once it has been out for 7 days, the same cooldown the registry applies to crates (.cargo/config.toml).
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]

@@ -1,0 +1,31 @@
+name: Repository Hygiene
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+
+# A new commit on a pull request cancels the run still going for the older commit: runners are
+# limited and the older result is of no use, and the head commit always gets a fresh run, so a
+# cancelled older run cannot block the merge. A title edit has its own group, so it neither cancels
+# nor is cancelled by a push. Labels do not trigger this workflow: a bot labelling a new pull
+# request starts nothing, so the override label must be on the pull request when it is opened. Add
+# or remove it later and the result is stale until the run is re-run by hand (Actions, Re-run all jobs).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.action == 'edited' && github.run_id || 'commits' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  repository-hygiene:
+    uses: JorisJonkers-dev/github-workflows/.github/workflows/repository-hygiene-guard.yml@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
+    with:
+      package-proxy-guard: enforce
+    secrets:
+      PACKAGES_PROXY_TOKEN: ${{ secrets.PACKAGES_PROXY_TOKEN }}
