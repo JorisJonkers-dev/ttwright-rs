@@ -12,7 +12,8 @@ alongside nv-rs, nvmod-rs, loot-rs and lodwright-rs.
 ## Why it exists
 
 - To run TTW installs natively on Linux, Windows and macOS, as a library and a contract-driven
-  command line that nvmod and the toolbox can call, with progress, resume and a result document.
+  command line that the Toolbox's `raul` runs as a process through its Contracts (ADR-0002 and
+  ADR-0007 in rauls-trusty-toolbox), with progress events, resume and a result document.
 - To work the way the other components work: a required check on every merge, Conventional
   Commits, release-please, Renovate with a 7-day cooldown, tests, fuzzing of the MPI and BSA
   parsers, and attested release assets.
