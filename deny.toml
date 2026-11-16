@@ -32,6 +32,7 @@ allow = [
     "0BSD",
     "Unicode-3.0",
     "CC0-1.0",
+    "NCSA", # libfuzzer-sys bundles LLVM's libFuzzer (fuzz workspace only)
 ]
 confidence-threshold = 0.8
 # LAME, the MP3 encoder, is LGPL-3.0. The LGPL-3.0 is compatible with the GPL-3.0, and a GPL-3.0-only binary may

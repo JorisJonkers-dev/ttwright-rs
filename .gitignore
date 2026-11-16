@@ -38,3 +38,4 @@ scratchpad/
 *.mpi
 *.7z
 *.rar
+lcov.info

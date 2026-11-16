@@ -2,4 +2,4 @@
 # taken once it has been out for 7 days, the same cooldown the registry applies to crates (.cargo/config.toml).
 [toolchain]
 channel = "1.100.0"
-components = ["rustfmt", "clippy"]
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
