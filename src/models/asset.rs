@@ -92,12 +92,13 @@ impl Asset {
         let mut result = std::collections::HashMap::new();
 
         for part in self.params.split_whitespace() {
-            if part.starts_with('-') && part.contains(':') {
-                if let Some(colon_idx) = part.find(':') {
-                    let key = &part[1..colon_idx];
-                    let value = &part[colon_idx + 1..];
-                    result.insert(key.to_string(), value.to_string());
-                }
+            if part.starts_with('-')
+                && part.contains(':')
+                && let Some(colon_idx) = part.find(':')
+            {
+                let key = &part[1..colon_idx];
+                let value = &part[colon_idx + 1..];
+                result.insert(key.to_string(), value.to_string());
             }
         }
 

@@ -13,8 +13,8 @@ use super::paths::get_chunk_count_for_ram;
 use super::stats::{AtomicOpTimings, OpType, ProcessingStats};
 use crate::models::{Asset, Location};
 use crate::services::{
-    print_ram_status, BsaCache, BsaHandler, BsaWriterManager, LocationResolver, MemoryMonitor,
-    MpiPathIndex, MpiStore, XdeltaManager,
+    BsaCache, BsaHandler, BsaWriterManager, LocationResolver, MemoryMonitor, MpiPathIndex,
+    MpiStore, XdeltaManager, print_ram_status,
 };
 
 /// Processes assets from TTW manifest (thread-safe)
@@ -358,13 +358,13 @@ impl AssetProcessor {
             // Pre-extract BSA files for this chunk only
             let mut bsa_files_needed: HashMap<PathBuf, Vec<&str>> = HashMap::new();
             for asset in chunk {
-                if self.resolver.is_bsa_location(asset.source_loc) {
-                    if let Ok(bsa_path) = self.resolver.get_bsa_path(asset.source_loc) {
-                        bsa_files_needed
-                            .entry(bsa_path)
-                            .or_default()
-                            .push(&asset.source_path);
-                    }
+                if self.resolver.is_bsa_location(asset.source_loc)
+                    && let Ok(bsa_path) = self.resolver.get_bsa_path(asset.source_loc)
+                {
+                    bsa_files_needed
+                        .entry(bsa_path)
+                        .or_default()
+                        .push(&asset.source_path);
                 }
             }
 
@@ -481,13 +481,13 @@ impl AssetProcessor {
             // Pre-extract BSA files for this chunk only
             let mut bsa_files_needed: HashMap<PathBuf, Vec<&str>> = HashMap::new();
             for asset in chunk {
-                if self.resolver.is_bsa_location(asset.source_loc) {
-                    if let Ok(bsa_path) = self.resolver.get_bsa_path(asset.source_loc) {
-                        bsa_files_needed
-                            .entry(bsa_path)
-                            .or_default()
-                            .push(&asset.source_path);
-                    }
+                if self.resolver.is_bsa_location(asset.source_loc)
+                    && let Ok(bsa_path) = self.resolver.get_bsa_path(asset.source_loc)
+                {
+                    bsa_files_needed
+                        .entry(bsa_path)
+                        .or_default()
+                        .push(&asset.source_path);
                 }
             }
 
@@ -740,10 +740,10 @@ impl AssetProcessor {
             }
 
             let (archive, compression_options) = {
+                use ba2::Reader as BsaReader;
                 use ba2::tes4::{
                     Archive as TesArchive, ArchiveOptions, FileCompressionOptions as FcOpts,
                 };
-                use ba2::Reader as BsaReader;
                 let (archive, options): (TesArchive, ArchiveOptions) =
                     match TesArchive::read(bsa_path.as_path()) {
                         Ok(a) => a,
@@ -808,10 +808,10 @@ impl AssetProcessor {
                                     asset.source_path, asset.op_type, e
                                 );
                                 warn!("{}", error_msg);
-                                if let Ok(mut errs) = errors_ref.lock() {
-                                    if errs.len() < 100 {
-                                        errs.push(error_msg);
-                                    }
+                                if let Ok(mut errs) = errors_ref.lock()
+                                    && errs.len() < 100
+                                {
+                                    errs.push(error_msg);
                                 }
                                 pb_ref.inc(1);
                             }
@@ -836,25 +836,25 @@ impl AssetProcessor {
                             let error_msg =
                                 format!("{} (op={}): {}", asset.source_path, asset.op_type, e);
                             warn!("{}", error_msg);
-                            if let Ok(mut errs) = errors_ref.lock() {
-                                if errs.len() < 100 {
-                                    errs.push(error_msg);
-                                }
+                            if let Ok(mut errs) = errors_ref.lock()
+                                && errs.len() < 100
+                            {
+                                errs.push(error_msg);
                             }
                         }
                     }
                     pb_ref.inc(1);
 
                     // Track readiness: if this file went to a BSA target, check if that BSA is complete
-                    if result.is_ok() {
-                        if let Some(counter) = staged_ref.get(&asset.target_loc) {
-                            let new_count = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                            if let Some(&expected_count) = expected_ref.get(&asset.target_loc) {
-                                if new_count == expected_count {
-                                    // This output BSA has all files staged - send to builder
-                                    let _ = ready_tx.send(asset.target_loc);
-                                }
-                            }
+                    if result.is_ok()
+                        && let Some(counter) = staged_ref.get(&asset.target_loc)
+                    {
+                        let new_count = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                        if let Some(&expected_count) = expected_ref.get(&asset.target_loc)
+                            && new_count == expected_count
+                        {
+                            // This output BSA has all files staged - send to builder
+                            let _ = ready_tx.send(asset.target_loc);
                         }
                     }
                 }
@@ -903,14 +903,14 @@ impl AssetProcessor {
                 pb.inc(1);
 
                 // Track readiness for directory assets too
-                if result.is_ok() {
-                    if let Some(counter) = staged_counts.get(&asset.target_loc) {
-                        let new_count = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                        if let Some(&expected_count) = expected.get(&asset.target_loc) {
-                            if new_count == expected_count {
-                                let _ = bsa_ready_tx.send(asset.target_loc);
-                            }
-                        }
+                if result.is_ok()
+                    && let Some(counter) = staged_counts.get(&asset.target_loc)
+                {
+                    let new_count = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                    if let Some(&expected_count) = expected.get(&asset.target_loc)
+                        && new_count == expected_count
+                    {
+                        let _ = bsa_ready_tx.send(asset.target_loc);
                     }
                 }
             });
@@ -1145,10 +1145,10 @@ impl AssetProcessor {
             }
 
             let (archive, compression_options) = {
+                use ba2::Reader as BsaReader;
                 use ba2::tes4::{
                     Archive as TesArchive, ArchiveOptions, FileCompressionOptions as FcOpts,
                 };
-                use ba2::Reader as BsaReader;
                 let (archive, options): (TesArchive, ArchiveOptions) =
                     match TesArchive::read(bsa_path.as_path()) {
                         Ok(a) => a,
@@ -1211,10 +1211,10 @@ impl AssetProcessor {
                                     asset.source_path, asset.op_type, e
                                 );
                                 warn!("{}", error_msg);
-                                if let Ok(mut errs) = errors_ref.lock() {
-                                    if errs.len() < 100 {
-                                        errs.push(error_msg);
-                                    }
+                                if let Ok(mut errs) = errors_ref.lock()
+                                    && errs.len() < 100
+                                {
+                                    errs.push(error_msg);
                                 }
                                 processed_ref.fetch_add(1, Ordering::Relaxed);
                             }
@@ -1234,10 +1234,10 @@ impl AssetProcessor {
                             let error_msg =
                                 format!("{} (op={}): {}", asset.source_path, asset.op_type, e);
                             warn!("{}", error_msg);
-                            if let Ok(mut errs) = errors_ref.lock() {
-                                if errs.len() < 100 {
-                                    errs.push(error_msg);
-                                }
+                            if let Ok(mut errs) = errors_ref.lock()
+                                && errs.len() < 100
+                            {
+                                errs.push(error_msg);
                             }
                         }
                     }
@@ -1245,14 +1245,14 @@ impl AssetProcessor {
                     if current.is_multiple_of(100) || current <= 5 {
                         callback_ref(current, total, &format!("BSA {}/{}", bsa_idx + 1, num_bsas));
                     }
-                    if result.is_ok() {
-                        if let Some(counter) = staged_ref.get(&asset.target_loc) {
-                            let new_count = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                            if let Some(&expected_count) = expected_ref.get(&asset.target_loc) {
-                                if new_count == expected_count {
-                                    let _ = ready_tx.send(asset.target_loc);
-                                }
-                            }
+                    if result.is_ok()
+                        && let Some(counter) = staged_ref.get(&asset.target_loc)
+                    {
+                        let new_count = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                        if let Some(&expected_count) = expected_ref.get(&asset.target_loc)
+                            && new_count == expected_count
+                        {
+                            let _ = ready_tx.send(asset.target_loc);
                         }
                     }
                 }
@@ -1286,14 +1286,14 @@ impl AssetProcessor {
                 if current.is_multiple_of(100) || current == total {
                     callback(current, total, "Processing loose files");
                 }
-                if result.is_ok() {
-                    if let Some(counter) = staged_counts.get(&asset.target_loc) {
-                        let new_count = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                        if let Some(&expected_count) = expected.get(&asset.target_loc) {
-                            if new_count == expected_count {
-                                let _ = bsa_ready_tx.send(asset.target_loc);
-                            }
-                        }
+                if result.is_ok()
+                    && let Some(counter) = staged_counts.get(&asset.target_loc)
+                {
+                    let new_count = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                    if let Some(&expected_count) = expected.get(&asset.target_loc)
+                        && new_count == expected_count
+                    {
+                        let _ = bsa_ready_tx.send(asset.target_loc);
                     }
                 }
             });

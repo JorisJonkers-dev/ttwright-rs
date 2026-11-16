@@ -5,14 +5,14 @@ use indicatif::ProgressBar;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::warn;
 
+use super::LZ4_FRAME_MAGIC;
 use super::archive_progress_style;
 use super::extractor::MpiExtractor;
 use super::normalize_mpi_path;
-use super::LZ4_FRAME_MAGIC;
 
 /// In-memory MPI package store.
 ///

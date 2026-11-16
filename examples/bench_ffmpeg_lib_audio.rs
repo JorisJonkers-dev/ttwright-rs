@@ -4,7 +4,7 @@ extern crate ffmpeg_next as ffmpeg;
 #[cfg(feature = "ffmpeg-audio")]
 use anyhow::{Context, Result};
 #[cfg(feature = "ffmpeg-audio")]
-use ffmpeg::{codec, filter, format, frame, media, Dictionary};
+use ffmpeg::{Dictionary, codec, filter, format, frame, media};
 #[cfg(feature = "ffmpeg-audio")]
 use rayon::prelude::*;
 #[cfg(feature = "ffmpeg-audio")]

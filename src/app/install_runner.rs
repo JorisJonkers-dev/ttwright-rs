@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use crate::app::InstallEvent;
 use crate::models::{Check, InstallConfig};
 use crate::services::{
-    compute_md5, compute_sha1, AssetProcessor, FileVerifier, GameDetection, LocationResolver,
-    ManifestLoader, MpiExtractor, MpiPathIndex, MpiStore, XdeltaManager,
+    AssetProcessor, FileVerifier, GameDetection, LocationResolver, ManifestLoader, MpiExtractor,
+    MpiPathIndex, MpiStore, XdeltaManager, compute_md5, compute_sha1,
 };
 
 #[derive(Debug, Clone)]
@@ -271,20 +271,20 @@ where
 }
 
 fn validate_request(request: &InstallRequest) -> Result<()> {
-    if let Some(path) = &request.fallout3_path {
-        if !path.exists() {
-            bail!("Fallout 3 directory not found: {}", path.display());
-        }
+    if let Some(path) = &request.fallout3_path
+        && !path.exists()
+    {
+        bail!("Fallout 3 directory not found: {}", path.display());
     }
-    if let Some(path) = &request.falloutnv_path {
-        if !path.exists() {
-            bail!("Fallout New Vegas directory not found: {}", path.display());
-        }
+    if let Some(path) = &request.falloutnv_path
+        && !path.exists()
+    {
+        bail!("Fallout New Vegas directory not found: {}", path.display());
     }
-    if let Some(path) = &request.oblivion_path {
-        if !path.exists() {
-            bail!("Oblivion directory not found: {}", path.display());
-        }
+    if let Some(path) = &request.oblivion_path
+        && !path.exists()
+    {
+        bail!("Oblivion directory not found: {}", path.display());
     }
     Ok(())
 }
@@ -481,38 +481,38 @@ where
     ));
     let detected = GameDetection::detect();
 
-    if paths.fallout3.is_none() {
-        if let Some(game) = detected.fallout3 {
-            emit(InstallEvent::log(format!(
-                "Detected {} via {}: {}",
-                game.kind.display_name(),
-                game.source,
-                game.path.display()
-            )));
-            paths.fallout3 = Some(game.path);
-        }
+    if paths.fallout3.is_none()
+        && let Some(game) = detected.fallout3
+    {
+        emit(InstallEvent::log(format!(
+            "Detected {} via {}: {}",
+            game.kind.display_name(),
+            game.source,
+            game.path.display()
+        )));
+        paths.fallout3 = Some(game.path);
     }
-    if paths.falloutnv.is_none() {
-        if let Some(game) = detected.falloutnv {
-            emit(InstallEvent::log(format!(
-                "Detected {} via {}: {}",
-                game.kind.display_name(),
-                game.source,
-                game.path.display()
-            )));
-            paths.falloutnv = Some(game.path);
-        }
+    if paths.falloutnv.is_none()
+        && let Some(game) = detected.falloutnv
+    {
+        emit(InstallEvent::log(format!(
+            "Detected {} via {}: {}",
+            game.kind.display_name(),
+            game.source,
+            game.path.display()
+        )));
+        paths.falloutnv = Some(game.path);
     }
-    if paths.oblivion.is_none() {
-        if let Some(game) = detected.oblivion {
-            emit(InstallEvent::log(format!(
-                "Detected {} via {}: {}",
-                game.kind.display_name(),
-                game.source,
-                game.path.display()
-            )));
-            paths.oblivion = Some(game.path);
-        }
+    if paths.oblivion.is_none()
+        && let Some(game) = detected.oblivion
+    {
+        emit(InstallEvent::log(format!(
+            "Detected {} via {}: {}",
+            game.kind.display_name(),
+            game.source,
+            game.path.display()
+        )));
+        paths.oblivion = Some(game.path);
     }
 
     paths
@@ -645,7 +645,7 @@ fn failure_message(
 
 #[cfg(test)]
 mod tests {
-    use super::{failure_message, mpi_work_dir, InstallRequest};
+    use super::{InstallRequest, failure_message, mpi_work_dir};
     use std::path::PathBuf;
 
     fn request(dry_run: bool) -> InstallRequest {
@@ -663,11 +663,12 @@ mod tests {
     fn dry_run_mpi_work_dir_uses_temp_dir() {
         let dir = mpi_work_dir(&request(true));
         assert!(dir.starts_with(std::env::temp_dir()));
-        assert!(dir
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .starts_with("ttw_mpi_"));
+        assert!(
+            dir.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("ttw_mpi_")
+        );
     }
 
     #[test]

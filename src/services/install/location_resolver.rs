@@ -1,5 +1,5 @@
 use crate::models::{InstallConfig, Location, Variable};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::collections::HashMap;
 use std::path::PathBuf;
 

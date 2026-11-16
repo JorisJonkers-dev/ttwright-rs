@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use ba2::tes4::{Archive, ArchiveKey, DirectoryKey, File as BsaFile};
 use ba2::{ByteSlice, Reader};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -22,14 +22,14 @@ impl BsaCache {
         let db_path = base_dir.join(format!(".ttw_bsa_cache_{}.db", std::process::id()));
 
         // If a stale file exists from a crashed run, try to remove it
-        if db_path.exists() {
-            if let Err(e) = std::fs::remove_file(&db_path) {
-                warn!(
-                    "Failed to remove stale cache file {}: {}",
-                    db_path.display(),
-                    e
-                );
-            }
+        if db_path.exists()
+            && let Err(e) = std::fs::remove_file(&db_path)
+        {
+            warn!(
+                "Failed to remove stale cache file {}: {}",
+                db_path.display(),
+                e
+            );
         }
 
         let conn = Connection::open(&db_path).with_context(|| {

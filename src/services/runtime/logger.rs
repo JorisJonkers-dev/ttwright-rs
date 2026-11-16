@@ -3,7 +3,7 @@ use chrono::Local;
 use std::fs;
 use std::path::PathBuf;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Logger configuration and initialization
 pub struct Logger {

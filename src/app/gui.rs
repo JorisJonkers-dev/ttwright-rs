@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use ttw_installer::{
-    app::{run_install as run_shared_install, InstallEvent, InstallRequest},
+    app::{InstallEvent, InstallRequest, run_install as run_shared_install},
     services::{DetectedGame, GameDetection, Logger},
 };
 
@@ -47,12 +47,11 @@ impl UserConfig {
     /// Load config from file
     fn load() -> Self {
         let path = Self::config_path();
-        if path.exists() {
-            if let Ok(data) = fs::read_to_string(&path) {
-                if let Ok(config) = serde_json::from_str(&data) {
-                    return config;
-                }
-            }
+        if path.exists()
+            && let Ok(data) = fs::read_to_string(&path)
+            && let Ok(config) = serde_json::from_str(&data)
+        {
+            return config;
         }
         Self::default()
     }
@@ -86,11 +85,11 @@ impl GuiLogger {
             logs.push(msg.to_string());
         }
 
-        if let Ok(mut file_guard) = self.file.lock() {
-            if let Some(ref mut file) = *file_guard {
-                let timestamp = Local::now().format("%H:%M:%S");
-                let _ = writeln!(file, "[{}] {}", timestamp, msg);
-            }
+        if let Ok(mut file_guard) = self.file.lock()
+            && let Some(ref mut file) = *file_guard
+        {
+            let timestamp = Local::now().format("%H:%M:%S");
+            let _ = writeln!(file, "[{}] {}", timestamp, msg);
         }
     }
 }
@@ -322,11 +321,11 @@ impl MpiInstallerApp {
                     egui::TextEdit::singleline(&mut self.fo3_path)
                         .hint_text("Path to Fallout 3 installation (optional)"),
                 );
-                if ui.button("Browse...").clicked() {
-                    if let Some(path) = pick_folder() {
-                        self.fo3_path = path;
-                        self.save_config();
-                    }
+                if ui.button("Browse...").clicked()
+                    && let Some(path) = pick_folder()
+                {
+                    self.fo3_path = path;
+                    self.save_config();
                 }
                 ui.end_row();
 
@@ -337,11 +336,11 @@ impl MpiInstallerApp {
                     egui::TextEdit::singleline(&mut self.fnv_path)
                         .hint_text("Path to Fallout New Vegas installation (optional)"),
                 );
-                if ui.button("Browse...").clicked() {
-                    if let Some(path) = pick_folder() {
-                        self.fnv_path = path;
-                        self.save_config();
-                    }
+                if ui.button("Browse...").clicked()
+                    && let Some(path) = pick_folder()
+                {
+                    self.fnv_path = path;
+                    self.save_config();
                 }
                 ui.end_row();
 
@@ -352,11 +351,11 @@ impl MpiInstallerApp {
                     egui::TextEdit::singleline(&mut self.oblivion_path)
                         .hint_text("Path to Oblivion installation (optional)"),
                 );
-                if ui.button("Browse...").clicked() {
-                    if let Some(path) = pick_folder() {
-                        self.oblivion_path = path;
-                        self.save_config();
-                    }
+                if ui.button("Browse...").clicked()
+                    && let Some(path) = pick_folder()
+                {
+                    self.oblivion_path = path;
+                    self.save_config();
                 }
                 ui.end_row();
 
@@ -367,10 +366,10 @@ impl MpiInstallerApp {
                     egui::TextEdit::singleline(&mut self.mpi_path)
                         .hint_text("Path to .mpi file or extracted package folder"),
                 );
-                if ui.button("Browse...").clicked() {
-                    if let Some(path) = pick_mpi_file() {
-                        self.mpi_path = path;
-                    }
+                if ui.button("Browse...").clicked()
+                    && let Some(path) = pick_mpi_file()
+                {
+                    self.mpi_path = path;
                 }
                 ui.end_row();
 
@@ -381,11 +380,11 @@ impl MpiInstallerApp {
                     egui::TextEdit::singleline(&mut self.output_path)
                         .hint_text("Where to install output files"),
                 );
-                if ui.button("Browse...").clicked() {
-                    if let Some(path) = pick_folder() {
-                        self.output_path = path;
-                        self.save_config();
-                    }
+                if ui.button("Browse...").clicked()
+                    && let Some(path) = pick_folder()
+                {
+                    self.output_path = path;
+                    self.save_config();
                 }
                 ui.end_row();
             });
@@ -479,23 +478,23 @@ impl MpiInstallerApp {
         let detected = GameDetection::detect();
         let mut applied = 0usize;
 
-        if self.fo3_path.trim().is_empty() {
-            if let Some(path) = detected_path_string(detected.fallout3.as_ref()) {
-                self.fo3_path = path;
-                applied += 1;
-            }
+        if self.fo3_path.trim().is_empty()
+            && let Some(path) = detected_path_string(detected.fallout3.as_ref())
+        {
+            self.fo3_path = path;
+            applied += 1;
         }
-        if self.fnv_path.trim().is_empty() {
-            if let Some(path) = detected_path_string(detected.falloutnv.as_ref()) {
-                self.fnv_path = path;
-                applied += 1;
-            }
+        if self.fnv_path.trim().is_empty()
+            && let Some(path) = detected_path_string(detected.falloutnv.as_ref())
+        {
+            self.fnv_path = path;
+            applied += 1;
         }
-        if self.oblivion_path.trim().is_empty() {
-            if let Some(path) = detected_path_string(detected.oblivion.as_ref()) {
-                self.oblivion_path = path;
-                applied += 1;
-            }
+        if self.oblivion_path.trim().is_empty()
+            && let Some(path) = detected_path_string(detected.oblivion.as_ref())
+        {
+            self.oblivion_path = path;
+            applied += 1;
         }
 
         self.save_config();
@@ -504,20 +503,20 @@ impl MpiInstallerApp {
 }
 
 fn fill_missing_config_paths(config: &mut UserConfig, detected: &GameDetection) {
-    if config.fo3_path.trim().is_empty() {
-        if let Some(path) = detected_path_string(detected.fallout3.as_ref()) {
-            config.fo3_path = path;
-        }
+    if config.fo3_path.trim().is_empty()
+        && let Some(path) = detected_path_string(detected.fallout3.as_ref())
+    {
+        config.fo3_path = path;
     }
-    if config.fnv_path.trim().is_empty() {
-        if let Some(path) = detected_path_string(detected.falloutnv.as_ref()) {
-            config.fnv_path = path;
-        }
+    if config.fnv_path.trim().is_empty()
+        && let Some(path) = detected_path_string(detected.falloutnv.as_ref())
+    {
+        config.fnv_path = path;
     }
-    if config.oblivion_path.trim().is_empty() {
-        if let Some(path) = detected_path_string(detected.oblivion.as_ref()) {
-            config.oblivion_path = path;
-        }
+    if config.oblivion_path.trim().is_empty()
+        && let Some(path) = detected_path_string(detected.oblivion.as_ref())
+    {
+        config.oblivion_path = path;
     }
 }
 

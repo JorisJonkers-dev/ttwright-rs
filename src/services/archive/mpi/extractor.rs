@@ -8,8 +8,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::archive_progress_style;
 use super::LZ4_FRAME_MAGIC;
+use super::archive_progress_style;
 use crate::services::path_utils::safe_join;
 /// Extracts .mpi files (BSA archives) to a temporary directory
 pub struct MpiExtractor;

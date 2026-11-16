@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use sysinfo::System;
@@ -129,11 +129,11 @@ fn get_rss_bytes() -> u64 {
     {
         if let Ok(statm) = std::fs::read_to_string("/proc/self/statm") {
             let parts: Vec<&str> = statm.split_whitespace().collect();
-            if parts.len() >= 2 {
-                if let Ok(rss_pages) = parts[1].parse::<u64>() {
-                    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as u64;
-                    return rss_pages * page_size;
-                }
+            if parts.len() >= 2
+                && let Ok(rss_pages) = parts[1].parse::<u64>()
+            {
+                let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as u64;
+                return rss_pages * page_size;
             }
         }
     }

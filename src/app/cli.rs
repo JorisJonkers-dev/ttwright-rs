@@ -1,10 +1,10 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
 use ttw_installer::{
-    app::{find_manifest, run_install as run_shared_install, InstallEvent, InstallRequest},
+    app::{InstallEvent, InstallRequest, find_manifest, run_install as run_shared_install},
     services::{DetectedGame, GameDetection, Logger, ManifestLoader, MpiExtractor},
 };
 

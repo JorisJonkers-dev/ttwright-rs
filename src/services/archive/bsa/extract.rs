@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use ba2::tes4::Archive;
 use ba2::{ByteSlice, Reader};
 use std::collections::{HashMap, HashSet};
