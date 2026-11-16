@@ -53,26 +53,37 @@ jobs:
 
       # release-please cannot edit Cargo.lock, so the release PR would fail every `--locked` build. Refresh the
       # workspace crates' own lock entries on the release branch, with the App token so that CI runs on the commit.
-      - if: ${{ steps.rp.outputs.pr != '' && steps.rp.outputs.pr != 'null' }}
+      # The open release PR is looked up by its label: release-please reports `pr` only when it changed the PR.
+      - name: Find the release pull request
+        id: release-pr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          branch="$(gh pr list --repo "$REPO" --state open --label 'autorelease: pending' --json headRefName --jq '.[0].headRefName // ""')"
+          echo "branch=$branch" >>"$GITHUB_OUTPUT"
+          echo "release pull request branch: ${branch:-none}"
+      - if: ${{ steps.release-pr.outputs.branch != '' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ fromJSON(steps.rp.outputs.pr || '{}').headBranchName }}
+          ref: ${{ steps.release-pr.outputs.branch }}
           persist-credentials: false
-      - if: ${{ steps.rp.outputs.pr != '' && steps.rp.outputs.pr != 'null' }}
+      - if: ${{ steps.release-pr.outputs.branch != '' }}
         uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
         with:
           token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
-      - if: ${{ steps.rp.outputs.pr != '' && steps.rp.outputs.pr != 'null' }}
+      - if: ${{ steps.release-pr.outputs.branch != '' }}
         name: Refresh the lock entries of the workspace crates
         env:
           PUSH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ fromJSON(steps.rp.outputs.pr || '{}').headBranchName }}
+          BRANCH: ${{ steps.release-pr.outputs.branch }}
         run: |
           set -euo pipefail
           cargo update --workspace
           cargo update --workspace --manifest-path fuzz/Cargo.toml
-          if git diff --quiet; then exit 0; fi
+          if git diff --quiet; then echo "the lock entries are current"; exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "chore(release): refresh the workspace lock entries"
