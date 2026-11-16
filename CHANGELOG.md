@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.0](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.2.0...v0.3.0) (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* the binary is ttwright, not mpi_installer; the library crate is ttwright-core.
+* remove the eframe GUI; the Toolbox is the only UI ([#10](https://github.com/JorisJonkers-dev/ttwright-rs/issues/10))
+
+### Features
+
+* restructure into a Component with result and event Contracts ([#13](https://github.com/JorisJonkers-dev/ttwright-rs/issues/13)) ([3247192](https://github.com/JorisJonkers-dev/ttwright-rs/commit/3247192f0138c50ef778056ffe779823e95fb584))
+
+
+### Bug Fixes
+
+* build on macOS, where statvfs block counts are 32-bit ([#4](https://github.com/JorisJonkers-dev/ttwright-rs/issues/4)) ([4b31438](https://github.com/JorisJonkers-dev/ttwright-rs/commit/4b3143838f492c3b76339dc8f5728f334ad86824))
+* **release:** start release notes at the estate bootstrap commit ([#3](https://github.com/JorisJonkers-dev/ttwright-rs/issues/3)) ([731c909](https://github.com/JorisJonkers-dev/ttwright-rs/commit/731c90925551e8b1cec597888ea05a87e1e9b44d))
+
+
+### Code Refactoring
+
+* remove the eframe GUI; the Toolbox is the only UI ([#10](https://github.com/JorisJonkers-dev/ttwright-rs/issues/10)) ([f57d269](https://github.com/JorisJonkers-dev/ttwright-rs/commit/f57d2690d84178605cadfe8c118bb3e1691c7760))
+
 ## [0.1.6] - 2026-01-29
 
 ### Major Performance Improvements
