@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EventLine",
+  "description": "One line of the event stream: the event and its schema version.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "description": "The event version; 1.",
+      "type": "integer",
+      "format": "uint32",
+      "const": 1,
+      "minimum": 0
+    }
+  },
+  "oneOf": [
+    {
+      "description": "The manifest was read.",
+      "type": "object",
+      "properties": {
+        "assets_total": {
+          "description": "Asset operations in the package.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "event": {
+          "type": "string",
+          "const": "started"
+        },
+        "package": {
+          "description": "The manifest's title.",
+          "type": "string"
+        },
+        "resumed": {
+          "description": "This run continues an interrupted one.",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "The manifest's version.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "package",
+        "version",
+        "assets_total",
+        "resumed"
+      ]
+    },
+    {
+      "description": "A phase began.",
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "phase"
+        },
+        "phase": {
+          "description": "The phase.",
+          "$ref": "#/$defs/Phase"
+        }
+      },
+      "required": [
+        "event",
+        "phase"
+      ]
+    },
+    {
+      "description": "Progress within the current phase.",
+      "type": "object",
+      "properties": {
+        "done": {
+          "description": "Items done so far.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "event": {
+          "type": "string",
+          "const": "progress"
+        },
+        "message": {
+          "description": "What is being worked on, for people.",
+          "type": "string"
+        },
+        "of": {
+          "description": "Items in total.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "phase": {
+          "description": "The phase.",
+          "$ref": "#/$defs/Phase"
+        }
+      },
+      "required": [
+        "event",
+        "phase",
+        "done",
+        "of"
+      ]
+    },
+    {
+      "description": "Something did not go as planned, but the run goes on.",
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "warning"
+        },
+        "message": {
+          "description": "For people.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "message"
+      ]
+    },
+    {
+      "description": "The run ended; the result document follows on stdout.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "description": "Set unless the status is `success`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "event": {
+          "type": "string",
+          "const": "finished"
+        },
+        "status": {
+          "description": "How it ended.",
+          "$ref": "#/$defs/Status"
+        }
+      },
+      "required": [
+        "event",
+        "status"
+      ]
+    }
+  ],
+  "required": [
+    "schema_version"
+  ],
+  "$defs": {
+    "ErrorCode": {
+      "description": "Why a run did not succeed.",
+      "oneOf": [
+        {
+          "description": "The arguments are wrong (exit code 2).",
+          "type": "string",
+          "const": "usage"
+        },
+        {
+          "description": "The MPI package path does not exist.",
+          "type": "string",
+          "const": "mpi_not_found"
+        },
+        {
+          "description": "The MPI package cannot be read: not an archive, or truncated.",
+          "type": "string",
+          "const": "mpi_invalid"
+        },
+        {
+          "description": "The package has no manifest (`_package/index.json`).",
+          "type": "string",
+          "const": "manifest_missing"
+        },
+        {
+          "description": "The manifest is not valid JSON or does not have the manifest's shape.",
+          "type": "string",
+          "const": "manifest_invalid"
+        },
+        {
+          "description": "The manifest uses a feature this build does not implement; `feature` names it. Nothing was written.",
+          "type": "string",
+          "const": "unsupported_feature"
+        },
+        {
+          "description": "The package is a TTW version this build does not support; `feature` names the version.",
+          "type": "string",
+          "const": "unsupported_version"
+        },
+        {
+          "description": "The manifest needs a game copy that was not given (`--fo3`, `--fnv`, `--oblivion`); `feature` names it.",
+          "type": "string",
+          "const": "game_path_missing"
+        },
+        {
+          "description": "A game copy that was given does not exist or is not that game.",
+          "type": "string",
+          "const": "game_not_found"
+        },
+        {
+          "description": "A pre-installation check of the manifest failed (missing or modified game file, too little space).",
+          "type": "string",
+          "const": "check_failed"
+        },
+        {
+          "description": "One or more asset operations failed.",
+          "type": "string",
+          "const": "asset_failed"
+        },
+        {
+          "description": "One or more archives (BSA) could not be written.",
+          "type": "string",
+          "const": "archive_failed"
+        },
+        {
+          "description": "A post-installation command failed.",
+          "type": "string",
+          "const": "post_command_failed"
+        },
+        {
+          "description": "`--resume` was asked, but the journal in the destination belongs to another package or another set of\ngame copies.",
+          "type": "string",
+          "const": "resume_mismatch"
+        },
+        {
+          "description": "The run was cancelled; `--resume` continues it.",
+          "type": "string",
+          "const": "cancelled"
+        },
+        {
+          "description": "A file could not be read or written.",
+          "type": "string",
+          "const": "io"
+        },
+        {
+          "description": "A fault in ttwright itself.",
+          "type": "string",
+          "const": "internal"
+        }
+      ]
+    },
+    "Phase": {
+      "description": "The phases of an install, in order.",
+      "oneOf": [
+        {
+          "description": "Reading the MPI package and its manifest.",
+          "type": "string",
+          "const": "package"
+        },
+        {
+          "description": "Checking the manifest's features, version and game copies.",
+          "type": "string",
+          "const": "preflight"
+        },
+        {
+          "description": "The manifest's pre-installation checks.",
+          "type": "string",
+          "const": "checks"
+        },
+        {
+          "description": "Asset operations and archive writing.",
+          "type": "string",
+          "const": "assets"
+        },
+        {
+          "description": "Post-installation commands and file times.",
+          "type": "string",
+          "const": "post_install"
+        }
+      ]
+    },
+    "Status": {
+      "description": "How a run ended.",
+      "oneOf": [
+        {
+          "description": "Installed; exit code 0.",
+          "type": "string",
+          "const": "success"
+        },
+        {
+          "description": "Failed; exit code 1 (2 for a usage error).",
+          "type": "string",
+          "const": "failed"
+        },
+        {
+          "description": "The package needs a feature or is a version this build does not support; exit code 3. Nothing was written.",
+          "type": "string",
+          "const": "unsupported"
+        },
+        {
+          "description": "Cancelled; exit code 4. `--resume` continues from the journal.",
+          "type": "string",
+          "const": "cancelled"
+        }
+      ]
+    }
+  }
+}

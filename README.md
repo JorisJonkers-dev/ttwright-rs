@@ -1,63 +1,103 @@
-> **This is the JorisJonkers-dev rewrite of [SulfurNitride/TTW_Linux_Installer](https://github.com/SulfurNitride/TTW_Linux_Installer)**, kept as `ttwright-rs`, a Component of [Raul's Trusty Toolbox](https://github.com/JorisJonkers-dev/rauls-trusty-toolbox). The Toolbox's `raul` drives it as a process through its Contracts, its result and event documents (ADR-0002 and ADR-0007 in that repository), and passes it the game copies it detected; the CLI also works alone. The Contracts are being added in #5. The text below is upstream's README for now; see [FORK.md](FORK.md) for what differs. Report problems with this repository here, not upstream.
+# ttwright-rs
 
-A linux native installer for MPI packages (TTW, BSA Decompressors, so far only tested TTW and FNV/Oblivion Decompressor). As a note this will not line up with 17GBs output it should be around 18GBs.
+Installs Tale of Two Wastelands (TTW) and other MPI packages from your own copies of the games, natively on
+Linux, Windows and macOS. It is a Component of
+[Raul's tRusty Toolbox](https://github.com/JorisJonkers-dev/rauls-trusty-toolbox): the Toolbox's `raul` runs it as
+a process, passes it the game copies it detected and reads its result and event Contracts. The command line also
+works on its own. There is no window: the Toolbox is the only UI.
 
-This repository has no window of its own: the Toolbox is the only UI. Run the `mpi_installer` command line below, or install from the Toolbox.
+ttwright-rs is the JorisJonkers-dev rewrite of
+[SulfurNitride/TTW_Linux_Installer](https://github.com/SulfurNitride/TTW_Linux_Installer) by Sulfur Nitride and
+its contributors, whose history and GPL-3.0-only licence it keeps. See [FORK.md](FORK.md) for how upstream changes
+are ported. Report problems with this repository here, not upstream.
 
-Downloads are on nexus or via the github actions now they expire every day so please use nexus. https://www.nexusmods.com/site/mods/1657
+## Supported TTW versions
 
-If you want to support the things I put out, I do have a [Ko-Fi](https://ko-fi.com/sulfurnitride) I will never charge money for any of my content. [Discord](https://discord.gg/9JWQzSeUWt)
+| Package | Versions | Written against |
+| --- | --- | --- |
+| Tale of Two Wastelands | 3.3 and 3.4 | 3.4.0, the current public release |
+| Other MPI packages | any version | |
 
-## Where to get MPI files?
+A TTW package of another version is refused (`unsupported_version`, exit code 3) unless you pass
+`--allow-unsupported-version`. Any package whose manifest uses something this build does not implement (an asset
+operation, a location, variable or check type, an audio parameter or format, a post-installation command, a
+manifest field) is refused before a file is written, with `unsupported_feature` naming it, for example
+`asset_op:3`. `ttwright contracts --json` lists the versions and every supported feature; `ttwright inspect`
+checks a package without installing it.
 
-**TTW:** https://mod.pub/ttw/133/files - need to make an account and download the latest Tale of Two Wastelands file. Extract it and the mpi file will be inside.
+Implemented: copy from a game folder or archive, new files from the package, VCDIFF (xdelta3) patches, Ogg Vorbis
+resampling, audio encoding to Ogg Vorbis, WAV and MP3, archive (BSA) writing, MD5, SHA-1 and CRC32 file checks,
+free-space and path checks, the rename and delete post-installation commands, and the file times the manifest sets.
 
-**FNV BSA DECOMPRESSOR:** https://www.nexusmods.com/newvegas/mods/65854
+## Getting the package
 
-**OBLIVION BSA DECOMPRESSOR:** https://www.nexusmods.com/oblivion/mods/49652
+You need your own Fallout 3 and Fallout: New Vegas, and the TTW package from its publisher:
+[mod.pub](https://mod.pub/ttw/133/files) (an account is needed). Extract the download; the `.mpi` file is inside.
+No game files and no package are in this repository or its releases.
 
-**Requirements:** None! (Everything is bundled)
+## Command line
 
-## Building from Source
+```sh
+# Install
+ttwright install --mpi /path/to/TTW.mpi --fo3 /path/to/Fallout3 --fnv /path/to/FalloutNV --dest /path/to/output
 
-```bash
-# Install dependencies (Arch)
-sudo pacman -S rust xdelta3 alsa-lib
+# Continue an install that was cancelled (Ctrl+C) or interrupted
+ttwright install --resume --mpi ... --dest /path/to/output
 
-# Install dependencies (Debian)
-sudo apt install rustc cargo xdelta3 libasound2-dev
+# Check a package and the game copies without writing anything
+ttwright inspect --mpi /path/to/TTW.mpi
+ttwright install --dry-run --mpi ... --dest ...
 
-# Build
-cargo build --release
-
-# Binaries will be in target/release/
+# Other commands: detect, verify, extract, logs, contracts, schema
+ttwright --help
 ```
 
-## CLI Usage
+Without `--json`, game copies you leave out are looked for in Steam libraries (`--no-detect` turns that off).
 
-```bash
-# Auto-detect supported game installs
-./mpi_installer detect
+### Driven by the Toolbox
 
-# Install TTW
-./mpi_installer install --mpi /path/to/TTW.mpi --fo3 /path/to/Fallout3 --fnv /path/to/FalloutNV --dest /path/to/output
+`ttwright install --json` prints one `ttwright-result` document on stdout when it ends, also when it fails, and
+`ttwright-events` progress lines (JSON, one per line) on stderr, or into the file named by `--events`. With
+`--json` it never looks for game copies: pass every one the package needs, or it stops with `game_path_missing`.
 
-# Game paths can also be omitted and auto-detected on Linux when possible
-./mpi_installer install --mpi /path/to/TTW.mpi --dest /path/to/output
+| Exit code | Status | Meaning |
+| --- | --- | --- |
+| 0 | `success` | installed |
+| 1 | `failed` | see `error.code` |
+| 2 | `failed` | wrong arguments (`usage`) |
+| 3 | `unsupported` | `unsupported_feature` or `unsupported_version`; nothing was written |
+| 4 | `cancelled` | cancelled; `--resume` continues |
 
-# Install Oblivion Decompressor
-./mpi_installer install --mpi /path/to/OblDecomp.mpi --oblivion /path/to/Oblivion --dest /path/to/output
+The error codes are stable: `usage`, `mpi_not_found`, `mpi_invalid`, `manifest_missing`, `manifest_invalid`,
+`unsupported_feature`, `unsupported_version`, `game_path_missing`, `game_not_found`, `check_failed`,
+`asset_failed`, `archive_failed`, `post_command_failed`, `resume_mismatch`, `cancelled`, `io`, `internal`.
 
-# Other commands
-./mpi_installer --help
+The schemas are in [`contracts/`](contracts) and attached to every release; `ttwright schema result` prints them.
+Every document carries an integer `schema_version`; `ttwright contracts --json` lists the versions this build
+speaks.
+
+### Resume
+
+An install keeps a journal, `.ttwright-journal.json`, in the destination. A cancelled or interrupted install leaves
+it; `--resume` skips every loose file already written and every archive already written, and refuses a journal of
+another package or other game copies (`resume_mismatch`). A finished install removes it.
+
+## Building
+
+Rust 1.100 (`rust-toolchain.toml`). The MP3 and Vorbis encoders need `make`, a C compiler and `pkg-config`.
+
+```sh
+cargo build --release -p ttwright-cli   # target/release/ttwright
+cargo test --workspace
 ```
 
-## Nix Usage
+| Crate | What it is |
+| --- | --- |
+| `ttwright-core` | the installer library: MPI packages, manifests, checks, asset operations, archives, resume |
+| `ttwright-cli` | the `ttwright` command |
+| `ttwright-contract` | the result and event Contracts, error codes, the handshake and their JSON Schemas |
+| `ttwright-testkit` | synthetic fixtures for the tests; no game data |
 
-```bash
-# Run the CLI
-nix run github:JorisJonkers-dev/ttwright-rs
+With Nix: `nix run github:JorisJonkers-dev/ttwright-rs -- --help`, or `nix develop` for a shell.
 
-# Enter dev shell
-nix develop
-```
+Upstream's author has a [Ko-Fi](https://ko-fi.com/sulfurnitride) and a [Discord](https://discord.gg/9JWQzSeUWt).

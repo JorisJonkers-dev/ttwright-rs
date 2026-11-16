@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Handshake",
+  "description": "The answer of `ttwright contracts --json`.",
+  "type": "object",
+  "properties": {
+    "contract": {
+      "description": "Always `ttwright-contracts`.",
+      "type": "string",
+      "const": "ttwright-contracts"
+    },
+    "contracts": {
+      "description": "The Contracts, result first.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ContractInfo"
+      }
+    },
+    "schema_version": {
+      "description": "The handshake version; 1.",
+      "type": "integer",
+      "format": "uint32",
+      "const": 1,
+      "minimum": 0
+    },
+    "tool": {
+      "description": "The tool that answered.",
+      "$ref": "#/$defs/ToolInfo"
+    }
+  },
+  "required": [
+    "schema_version",
+    "contract",
+    "tool",
+    "contracts"
+  ],
+  "$defs": {
+    "ContractInfo": {
+      "description": "One Contract this build speaks.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The Contract name, for example `ttwright-result`.",
+          "type": "string"
+        },
+        "supports": {
+          "description": "For the result Contract: the packages, TTW versions and manifest features an install supports.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Supports"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "versions": {
+          "description": "The schema versions of that Contract this build can print, oldest first.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "name",
+        "versions"
+      ]
+    },
+    "Feature": {
+      "description": "One manifest feature this build implements.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "What it is, for people.",
+          "type": "string"
+        },
+        "id": {
+          "description": "A stable id, for example `asset_op:2`; an `unsupported_feature` error names ids of the same form.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ]
+    },
+    "SupportedPackage": {
+      "description": "A package family this build installs.",
+      "type": "object",
+      "properties": {
+        "current_release": {
+          "description": "The newest public release this build was written against, when one is known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "The package's name.",
+          "type": "string"
+        },
+        "versions": {
+          "description": "The `major.minor` versions whose manifests this build reads and installs, oldest first. Empty: any version\nwhose manifest uses only supported features.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "versions"
+      ]
+    },
+    "Supports": {
+      "description": "The packages and manifest features an install supports.",
+      "type": "object",
+      "properties": {
+        "features": {
+          "description": "Manifest features. A manifest that uses any other is refused with `unsupported_feature`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Feature"
+          }
+        },
+        "packages": {
+          "description": "Package families. A TTW package outside the listed versions is refused with `unsupported_version` unless\n`--allow-unsupported-version` is given.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SupportedPackage"
+          }
+        }
+      },
+      "required": [
+        "packages",
+        "features"
+      ]
+    },
+    "ToolInfo": {
+      "description": "The tool that printed a document.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Always `ttwright`.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The release version, for example `0.3.0`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    }
+  }
+}

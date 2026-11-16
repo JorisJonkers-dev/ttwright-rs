@@ -21,7 +21,7 @@
     apps = forAllSystems (system: {
       cli = {
         type = "app";
-        program = lib.getExe' self.packages.${system}.default "mpi_installer";
+        program = lib.getExe' self.packages.${system}.default "ttwright";
         meta.description = "Command line interface of the installer";
       };
     });

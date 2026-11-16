@@ -35,6 +35,22 @@ When upstream moves, the sync workflow opens an issue listing the new commits. E
 ported to `main` by pull request, adapted to this repository's structure, or ticked off as not
 applicable with a reason. The commit message names the upstream commit it ports.
 
+### Where upstream's files are here
+
+| Upstream | Here |
+| --- | --- |
+| `src/models/`, `src/services/`, `src/app/install_runner.rs`, `src/lib.rs` | the same paths under `crates/ttwright-core/src/` |
+| `src/app/cli.rs` | `crates/ttwright-cli/src/main.rs` (install, contracts, schema) and `commands.rs` (the other commands, as they were) |
+| `src/app/gui.rs` | removed: the Toolbox is the only UI. GUI changes are not ported. |
+| `examples/` | `crates/ttwright-core/examples/` |
+| `tools/xdelta3` | removed: patches are applied by oxidelta, in process |
+
+The layout under `crates/ttwright-core/src/` is upstream's, so most upstream commits apply with
+`git format-patch -1 <commit>` and `git am --directory=crates/ttwright-core <patch>`. Differences to expect: the
+library prints through `tracing` instead of `println!` (stdout carries the result document), errors that callers
+match on are `InstallError` with an `ErrorCode`, and unknown manifest features are refused in
+`src/app/preflight.rs` instead of skipped.
+
 ## Not shipped
 
 No game files, no MPI packages and no TTW data are in this repository or its releases. Users
