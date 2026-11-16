@@ -141,7 +141,7 @@ fn get_rss_bytes() -> u64 {
     // Cross-platform fallback: use sysinfo
     #[cfg(not(target_os = "linux"))]
     {
-        use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System, UpdateKind};
+        use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
         let pid = Pid::from_u32(std::process::id());
         let mut sys = System::new_with_specifics(
             RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing().with_memory()),
