@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use ttwright_contract::{ErrorCode, Event, PackageInfo, Phase, ResultDoc, Status};
 
 pub use crate::app::CancelToken;
-use crate::app::{InstallEvent, InstallOutcome, InstallRequest, run_install};
+use crate::app::{InstallEvent, InstallOutcome, InstallRequest, JOURNAL_FILE, run_install};
 pub use ttwright_contract::{API_CONTRACT, API_VERSION};
 
 /// What to install, from where, into where.
@@ -116,10 +116,29 @@ impl Error {
             text.push_str(message);
         }
         match home() {
-            Some(home) => text.replace(&home, "~"),
+            Some(home) => replace_home(&text, &home),
             None => text,
         }
     }
+}
+
+/// `text` with every occurrence of the folder `home` that is a whole path replaced by `~`: one that ends the text or
+/// is followed by a separator. `/home/al` is not replaced inside `/home/alice`.
+fn replace_home(text: &str, home: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(home) {
+        let after = &rest[at + home.len()..];
+        out.push_str(&rest[..at]);
+        if after.is_empty() || after.starts_with(['/', '\\']) {
+            out.push('~');
+        } else {
+            out.push_str(home);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The home folder, when it is long enough that replacing it cannot hit unrelated text.
@@ -201,9 +220,11 @@ fn result_document(job: &InstallJob, outcome: &InstallOutcome) -> ResultDoc {
 /// Install the package `job` names into its destination.
 ///
 /// `progress` receives the `ttwright-events` events; `cancel` is checked between assets, and a token that is already
-/// set when the call starts ends it as cancelled. A cancelled call returns [`InstallOutput::Cancelled`] and keeps the
-/// journal, so a later call with [`InstallJob::resume`] continues where it stopped. The last event is always
-/// [`Event::Finished`], with the status of the returned document. Nothing is printed and the process is never ended.
+/// set when the call starts ends it as cancelled. The token only changes the outcome when the install stopped because
+/// of it: an install that finished is a success, and a failure for another reason keeps its own code. A cancelled call
+/// returns [`InstallOutput::Cancelled`]; when it left a journal in the destination, a later call with
+/// [`InstallJob::resume`] continues where it stopped. The last event is always [`Event::Finished`], with the status of
+/// the returned document. Nothing is printed and the process is never ended.
 ///
 /// # Errors
 /// An [`Error`] whose `code` says why: for example `mpi_not_found`, `manifest_invalid`, `unsupported_feature`,
@@ -238,15 +259,34 @@ pub fn install(
         }
     });
     let mut doc = result_document(job, &outcome);
-    // A cancel that arrives before the asset phase (for example during the checks) is not seen by the asset
-    // processor, so the run would otherwise report the cancel as a failure. The token is the caller's word: once
-    // set, the call is cancelled, and the journal that is already on disk is what a resumed call continues from.
-    if doc.status != Status::Cancelled && cancel.is_cancelled() {
+    // A cancel only changes the outcome when the install stopped because of it: the token was set before the work
+    // finished. A cancel that arrives before the asset phase (for example during the checks) is not seen by the
+    // asset processor, so such a run would otherwise report the cancel as a failure; it is turned into a cancelled
+    // result here. A run that finished, or that failed for another reason, keeps its own outcome, and a token set
+    // after it returned changes nothing.
+    let stopped_by_cancel = cancel.is_cancelled()
+        && match &outcome.error {
+            None => false,
+            Some(e) => e.code == ErrorCode::Cancelled,
+        };
+    if stopped_by_cancel && doc.status != Status::Cancelled {
         doc.fail(
             ErrorCode::Cancelled,
             "The install was cancelled; resuming it continues from where it stopped",
             None,
         );
+    }
+    let cancelled = stopped_by_cancel || doc.status == Status::Cancelled;
+    // Only a journal on disk is something a resumed call can continue from.
+    let resumable = cancelled && job.destination_path.join(JOURNAL_FILE).is_file();
+    if cancelled && !resumable {
+        // Nothing was written that a resume could continue: offer none.
+        if let Some(error) = &mut doc.error
+            && error.code == ErrorCode::Cancelled
+        {
+            "The install was cancelled before it started; run it again to install"
+                .clone_into(&mut error.message);
+        }
     }
     let progress = shared
         .into_inner()
@@ -255,7 +295,7 @@ pub fn install(
         status: doc.status,
         code: doc.error.as_ref().map(|e| e.code),
     });
-    if doc.status == Status::Cancelled {
+    if cancelled {
         return Ok(InstallOutput::Cancelled {
             result: Box::new(doc),
         });
@@ -302,12 +342,34 @@ mod tests {
 
     #[test]
     fn the_copy_text_shows_the_home_folder_as_a_tilde() {
-        let Some(home) = super::home() else { return };
+        // A known home, whatever this machine's is: the summary names a file in it.
+        let home = "/home/synthetic-user";
         let mut e = error(None);
         e.summary = format!("cannot read {home}/x.mpi");
-        let text = e.copy_text();
+        // The machine's home is replaced by `copy_text` itself; any other known home is replaced here, so the test
+        // says the same thing on every machine.
+        let text = super::replace_home(&e.copy_text(), home);
         assert!(text.contains("cannot read ~/x.mpi"), "{text}");
-        assert!(!text.contains(&home));
+        assert!(!text.contains(home), "{text}");
+        if let Some(real) = super::home() {
+            let mut e = error(None);
+            e.summary = format!("cannot read {real}/x.mpi");
+            let text = e.copy_text();
+            assert!(text.contains("cannot read ~/x.mpi"), "{text}");
+            assert!(
+                !text.contains(&real),
+                "the home folder is shown as ~: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_home_folder_is_only_replaced_at_a_path_boundary() {
+        let home = "/home/al";
+        assert_eq!(
+            super::replace_home("in /home/al/x and /home/alice/y and /home/al", home),
+            "in ~/x and /home/alice/y and ~"
+        );
     }
 
     #[test]
@@ -322,9 +384,8 @@ mod tests {
         .into_iter()
         .map(label_key)
         .collect();
-        let mut unique = keys.clone();
-        unique.dedup();
-        assert_eq!(unique.len(), 5);
+        let unique: std::collections::HashSet<_> = keys.iter().collect();
+        assert_eq!(unique.len(), keys.len(), "the keys are all unique");
         assert!(keys.iter().all(|k| k.starts_with("ttw.")));
     }
 

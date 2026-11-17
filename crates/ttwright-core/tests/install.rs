@@ -319,11 +319,21 @@ fn a_cancelled_install_resumes_and_skips_what_is_done() {
 #[test]
 fn resuming_another_package_is_refused() {
     let f = Fixture::new("mismatch");
+    // A run cancelled once the asset phase starts leaves a journal for this package (a cancel before that point
+    // writes nothing at all).
     let cancel = CancelToken::new();
-    cancel.cancel();
+    let stopper = cancel.clone();
     let mut req = request(&f);
     req.cancel = cancel;
-    assert_eq!(code(&install(req).0).0, ErrorCode::Cancelled);
+    let outcome = run_install(req, |e| {
+        if let InstallEvent::Event(Event::Phase {
+            phase: Phase::Assets,
+        }) = e
+        {
+            stopper.cancel();
+        }
+    });
+    assert_eq!(code(&outcome).0, ErrorCode::Cancelled);
 
     let mut m = Fixture::manifest();
     m.set(

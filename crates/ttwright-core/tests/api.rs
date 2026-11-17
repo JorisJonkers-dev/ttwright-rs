@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! [`ttwright_core::api::install`] called in process: the result, progress, cancel and resume, and the errors.
 
+use serde_json::json;
 use ttwright_contract::{ErrorCode, Event, Phase, Status};
 use ttwright_core::api::{CancelToken, InstallJob, InstallOutput, NoProgress, install};
 use ttwright_core::app::JOURNAL_FILE;
-use ttwright_testkit::Fixture;
+use ttwright_testkit::{Fixture, loc};
 
 fn job(f: &Fixture) -> InstallJob {
     InstallJob {
@@ -111,6 +112,19 @@ fn a_token_cancelled_before_the_call_is_a_cancelled_result_that_ends_with_finish
         result.error.as_ref().map(|e| e.code),
         Some(ErrorCode::Cancelled)
     );
+    let message = result
+        .error
+        .as_ref()
+        .map(|e| e.message.as_str())
+        .unwrap_or_default();
+    assert!(
+        !message.contains("resum"),
+        "no journal was written, so no resume is offered: {message}"
+    );
+    assert!(
+        !f.dest.join(JOURNAL_FILE).exists(),
+        "no journal was written"
+    );
     assert_eq!(
         events.last(),
         Some(&Event::Finished {
@@ -140,7 +154,146 @@ fn a_missing_game_copy_is_a_typed_error_whose_copy_text_has_no_command_line() {
     assert_eq!(err.result.status, Status::Failed);
     let text = err.copy_text();
     assert!(text.contains("game_path_missing"), "{text}");
-    assert!(!text.contains("--"), "{text}");
+    assert!(
+        text.contains("The package needs the fallout3 copy, and none was given"),
+        "{text}"
+    );
+    assert!(!text.contains("--fo3"), "no command line option: {text}");
+}
+
+#[test]
+fn a_cancel_set_after_the_install_finished_leaves_it_a_success() {
+    let f = Fixture::new("api-cancel-late");
+    let cancel = CancelToken::new();
+    let late = cancel.clone();
+    // The install is over when the last phase is reported; the caller's token is set before the call returns.
+    let mut events: Vec<Event> = Vec::new();
+    let mut progress = |e: &Event| {
+        events.push(e.clone());
+        if matches!(
+            e,
+            Event::Phase {
+                phase: Phase::PostInstall
+            }
+        ) {
+            late.cancel();
+        }
+    };
+    let out = install(&job(&f), &mut progress, &cancel).unwrap();
+    let InstallOutput::Done { result } = out else {
+        panic!("not done: {out:?}")
+    };
+    assert_eq!(result.status, Status::Success);
+    assert!(result.error.is_none());
+    assert_eq!(result.exit_code, 0);
+    assert!(f.dest.join("loose.txt").is_file());
+    assert_eq!(
+        events.last(),
+        Some(&Event::Finished {
+            status: Status::Success,
+            code: None
+        })
+    );
+}
+
+#[test]
+fn a_failure_for_another_reason_keeps_its_code_when_the_token_is_set_late() {
+    // A check that fails: the install stops at the checks, and the caller's token is set before the call returns.
+    let mut m = Fixture::manifest();
+    m.check(json!({
+        "Type": 0, "Loc": loc::GAME_DATA, "File": "loose.txt", "Checksums": "deadbeef",
+    }));
+    let f = Fixture::with_manifest("api-cancel-failed", &m);
+    let cancel = CancelToken::new();
+    let late = cancel.clone();
+    let mut events: Vec<Event> = Vec::new();
+    let mut progress = |e: &Event| {
+        events.push(e.clone());
+        if matches!(
+            e,
+            Event::Phase {
+                phase: Phase::Checks
+            }
+        ) {
+            late.cancel();
+        }
+    };
+    let err = install(&job(&f), &mut progress, &cancel).unwrap_err();
+    assert_eq!(err.code, ErrorCode::CheckFailed);
+    assert_eq!(err.result.status, Status::Failed);
+    assert_eq!(
+        err.result.error.as_ref().map(|e| e.code),
+        Some(ErrorCode::CheckFailed)
+    );
+    assert_eq!(
+        events.last(),
+        Some(&Event::Finished {
+            status: Status::Failed,
+            code: Some(ErrorCode::CheckFailed)
+        })
+    );
+}
+
+#[test]
+fn a_cancel_before_any_work_is_cancelled_without_a_resume_when_nothing_was_written() {
+    // A package with one asset: the caller's token is set at the preflight, before the journal or the destination is
+    // written, so the run stops without a journal, and nothing offers a resume.
+    let dir = ttwright_testkit::TempDir::new("api-cancel-journal");
+    let mut m = ttwright_testkit::Manifest::new("Tale of Two Wastelands", "3.4.0");
+    let game = ttwright_testkit::game_copy(&dir.join("Fallout 3"), "Fallout3.exe", &[]);
+    let source = m.location("FO3 Data", 0, "%FO3DATA%");
+    let dest = m.location("Destination", 0, "%DESTINATION%");
+    m.variable(
+        "FO3ROOT",
+        4,
+        Some("HKLM\\Software\\Synthetic\\Installed Path"),
+    );
+    m.asset(0, "", source, dest, "absent.txt", None);
+    let mpi = dir.join("package/Synthetic.mpi");
+    ttwright_testkit::write(&mpi, &ttwright_testkit::mpi_package(&m.build(), &[]));
+    let destination = dir.join("out");
+    let j = InstallJob {
+        mpi_path: mpi,
+        fallout3_path: Some(game),
+        destination_path: destination.clone(),
+        ..InstallJob::default()
+    };
+
+    let cancel = CancelToken::new();
+    let stopper = cancel.clone();
+    let mut progress = |e: &Event| {
+        if matches!(
+            e,
+            Event::Phase {
+                phase: Phase::Preflight
+            }
+        ) {
+            stopper.cancel();
+        }
+    };
+    let out = install(&j, &mut progress, &cancel).unwrap();
+    let InstallOutput::Cancelled { result } = out else {
+        panic!("not cancelled: {out:?}")
+    };
+    assert_eq!(result.status, Status::Cancelled);
+    assert_eq!(
+        result.error.as_ref().map(|e| e.code),
+        Some(ErrorCode::Cancelled)
+    );
+    assert_eq!(result.exit_code, 4);
+    let message = result
+        .error
+        .as_ref()
+        .map(|e| e.message.as_str())
+        .unwrap_or_default();
+    assert!(
+        !message.contains("resum"),
+        "nothing was written, so no resume is offered: {message}"
+    );
+    assert!(
+        !destination.join(JOURNAL_FILE).exists(),
+        "no journal was written"
+    );
 }
 
 #[test]

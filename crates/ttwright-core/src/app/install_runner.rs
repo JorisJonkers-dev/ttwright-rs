@@ -233,6 +233,15 @@ where
         mpi_package_path: mpi_dir.to_string_lossy().to_string(),
     };
 
+    // A cancel that arrives before anything is written (the package read, the preflight) ends the install here, so
+    // no journal and no destination folder is left behind and no resume is offered.
+    if request.cancel.is_cancelled() {
+        return Err(InstallError::new(
+            ErrorCode::Cancelled,
+            "The install was cancelled before it started; run it again to install",
+        )
+        .into());
+    }
     let journal = if request.dry_run {
         Journal::in_memory()
     } else {
