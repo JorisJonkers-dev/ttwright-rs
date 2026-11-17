@@ -95,6 +95,41 @@ fn a_cancel_is_a_result_and_a_resumed_call_finishes_the_install() {
 }
 
 #[test]
+fn a_token_cancelled_before_the_call_is_a_cancelled_result_that_ends_with_finished() {
+    let f = Fixture::new("api-cancel-first");
+    let cancel = CancelToken::new();
+    cancel.cancel();
+    let mut events: Vec<Event> = Vec::new();
+    let mut progress = |e: &Event| events.push(e.clone());
+    let out = install(&job(&f), &mut progress, &cancel).unwrap();
+    let InstallOutput::Cancelled { result } = out else {
+        panic!("not cancelled: {out:?}")
+    };
+    assert_eq!(result.status, Status::Cancelled);
+    assert_eq!(result.exit_code, 4);
+    assert_eq!(
+        result.error.as_ref().map(|e| e.code),
+        Some(ErrorCode::Cancelled)
+    );
+    assert_eq!(
+        events.last(),
+        Some(&Event::Finished {
+            status: Status::Cancelled,
+            code: Some(ErrorCode::Cancelled)
+        })
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, Event::Finished { .. }))
+            .count(),
+        1,
+        "exactly one Finished, and it is last"
+    );
+    assert!(!f.dest.join("loose.txt").exists(), "nothing was written");
+}
+
+#[test]
 fn a_missing_game_copy_is_a_typed_error_whose_copy_text_has_no_command_line() {
     let f = Fixture::new("api-no-game");
     let mut j = job(&f);

@@ -200,9 +200,10 @@ fn result_document(job: &InstallJob, outcome: &InstallOutcome) -> ResultDoc {
 
 /// Install the package `job` names into its destination.
 ///
-/// `progress` receives the `ttwright-events` events; `cancel` is checked between assets. A cancelled call returns
-/// [`InstallOutput::Cancelled`] and keeps the journal, so a later call with [`InstallJob::resume`] continues where
-/// it stopped. Nothing is printed and the process is never ended.
+/// `progress` receives the `ttwright-events` events; `cancel` is checked between assets, and a token that is already
+/// set when the call starts ends it as cancelled. A cancelled call returns [`InstallOutput::Cancelled`] and keeps the
+/// journal, so a later call with [`InstallJob::resume`] continues where it stopped. The last event is always
+/// [`Event::Finished`], with the status of the returned document. Nothing is printed and the process is never ended.
 ///
 /// # Errors
 /// An [`Error`] whose `code` says why: for example `mpi_not_found`, `manifest_invalid`, `unsupported_feature`,
@@ -224,6 +225,9 @@ pub fn install(
         allow_unsupported_version: job.allow_unsupported_version,
         cancel: cancel.clone(),
     };
+    // The receiver is used from the install's worker threads, so it lives behind a lock. A panic in it poisons the
+    // lock; the events after that are dropped rather than panicking again, and the receiver is still recovered for
+    // the `Finished` event below.
     let shared = Mutex::new(progress);
     let outcome = run_install(request, |event| match event {
         InstallEvent::Log(message) => tracing::info!("{message}"),
@@ -233,7 +237,17 @@ pub fn install(
             }
         }
     });
-    let doc = result_document(job, &outcome);
+    let mut doc = result_document(job, &outcome);
+    // A cancel that arrives before the asset phase (for example during the checks) is not seen by the asset
+    // processor, so the run would otherwise report the cancel as a failure. The token is the caller's word: once
+    // set, the call is cancelled, and the journal that is already on disk is what a resumed call continues from.
+    if doc.status != Status::Cancelled && cancel.is_cancelled() {
+        doc.fail(
+            ErrorCode::Cancelled,
+            "The install was cancelled; resuming it continues from where it stopped",
+            None,
+        );
+    }
     let progress = shared
         .into_inner()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -241,22 +255,22 @@ pub fn install(
         status: doc.status,
         code: doc.error.as_ref().map(|e| e.code),
     });
-    match outcome.error {
-        None => Ok(InstallOutput::Done {
+    if doc.status == Status::Cancelled {
+        return Ok(InstallOutput::Cancelled {
             result: Box::new(doc),
-        }),
-        Some(e) if e.code == ErrorCode::Cancelled || doc.status == Status::Cancelled => {
-            Ok(InstallOutput::Cancelled {
-                result: Box::new(doc),
-            })
-        }
-        Some(e) => Err(Error {
-            code: e.code,
-            summary: e.message,
-            feature: e.feature,
-            result: Box::new(doc),
-        }),
+        });
     }
+    let Some(e) = outcome.error else {
+        return Ok(InstallOutput::Done {
+            result: Box::new(doc),
+        });
+    };
+    Err(Error {
+        code: e.code,
+        summary: e.message,
+        feature: e.feature,
+        result: Box::new(doc),
+    })
 }
 
 #[cfg(test)]

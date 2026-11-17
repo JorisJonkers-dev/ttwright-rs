@@ -292,6 +292,7 @@ fn install(args: &InstallArgs) -> ExitCode {
 
     let mut doc = match api::install(&job, &mut events, &cancel) {
         Ok(InstallOutput::Done { result } | InstallOutput::Cancelled { result }) => *result,
+        // The library's error carries the result document; the command line adds its own words to it.
         Err(e) => *e.result,
     };
     with_hint(&mut doc);

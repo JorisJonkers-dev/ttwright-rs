@@ -159,6 +159,27 @@ fn json_mode_never_scans_for_game_copies() {
 }
 
 #[test]
+fn a_missing_game_copy_in_json_mode_names_the_option_that_answers_it() {
+    let f = Fixture::new("cli-hint");
+    let out = ttwright(&[
+        "install",
+        "--json",
+        "--mpi",
+        f.mpi.to_str().unwrap(),
+        "--dest",
+        f.dest.to_str().unwrap(),
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    let doc = json(&out);
+    check(DocumentKind::Result, &doc).unwrap();
+    assert_eq!(doc["status"], "failed");
+    assert_eq!(doc["error"]["code"], "game_path_missing");
+    assert_eq!(doc["error"]["feature"], "fallout3");
+    let message = doc["error"]["message"].as_str().unwrap();
+    assert!(message.contains("--fo3"), "{message}");
+}
+
+#[test]
 fn usage_errors_exit_2_and_in_json_mode_print_a_result() {
     let out = ttwright(&["install", "--json", "--mpi", "x"]);
     assert_eq!(out.status.code(), Some(2));
