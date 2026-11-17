@@ -10,6 +10,9 @@ name: Release
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
   workflow_dispatch:
 
 # Each job asks for what it needs; the workflow itself holds nothing.
@@ -195,6 +198,155 @@ jobs:
           path: dist/
           retention-days: 7
 
+  packages:
+    needs: [release-please, assets]
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.assets.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name || github.ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: binaries
+          merge-multiple: true
+      - uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+      - name: Build archives
+        env:
+          BINARIES: binaries
+          OUT: packages
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          tar -czf "$OUT/ttwright-x86_64-unknown-linux-gnu.tar.gz" -C "$BINARIES" ttwright-x86_64-unknown-linux-gnu -C "$WORKSPACE" LICENSE
+          stage="$OUT/stage-windows"
+          mkdir -p "$stage"
+          cp "$BINARIES/ttwright-x86_64-pc-windows-msvc.exe" "$stage/"
+          cp "$WORKSPACE/LICENSE" "$stage/"
+          (cd "$stage" && zip -r "$WORKSPACE/$OUT/ttwright-x86_64-pc-windows-msvc.zip" .)
+          stage="$OUT/stage-macos"
+          mkdir -p "$stage"
+          cp "$BINARIES/ttwright-universal-apple-darwin" "$stage/"
+          cp "$WORKSPACE/LICENSE" "$stage/"
+          tar -czf "$OUT/ttwright-universal-apple-darwin.tar.gz" -C "$stage" .
+          rm -rf "$OUT/stage-windows" "$OUT/stage-macos"
+          tar -tzf "$OUT/ttwright-x86_64-unknown-linux-gnu.tar.gz" >/dev/null
+          unzip -t "$OUT/ttwright-x86_64-pc-windows-msvc.zip" >/dev/null
+          tar -tzf "$OUT/ttwright-universal-apple-darwin.tar.gz" >/dev/null
+          ls -l "$OUT"
+      - name: Push packages
+        id: push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          OUT: packages
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#v}"
+          echo "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+          push_one() {
+            local target="$1" archive="$2"
+            local ref="ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright:${VERSION}-${target}"
+            (cd "$OUT" && oras push "$ref" "$(basename "$archive")" \
+              --annotation "org.opencontainers.image.source=https://github.com/JorisJonkers-dev/ttwright-rs" \
+              --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+              --annotation "org.opencontainers.image.licenses=GPL-3.0-only")
+            local digest
+            digest="$(oras resolve "$ref")"
+            printf '%s' "$digest" > "$OUT/${target}.digest"
+            sha256sum "$archive" | awk '{print $1}' > "$OUT/${target}.sha256"
+            echo "pushed $ref $digest"
+          }
+
+          push_one x86_64-unknown-linux-gnu "$OUT/ttwright-x86_64-unknown-linux-gnu.tar.gz"
+          push_one x86_64-pc-windows-msvc "$OUT/ttwright-x86_64-pc-windows-msvc.zip"
+          push_one universal-apple-darwin "$OUT/ttwright-universal-apple-darwin.tar.gz"
+
+          {
+            echo "digest_linux=$(cat "$OUT/x86_64-unknown-linux-gnu.digest")"
+            echo "digest_windows=$(cat "$OUT/x86_64-pc-windows-msvc.digest")"
+            echo "digest_macos=$(cat "$OUT/universal-apple-darwin.digest")"
+          } >> "$GITHUB_OUTPUT"
+      - name: Attest Linux package
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright
+          subject-digest: ${{ steps.push.outputs.digest_linux }}
+          push-to-registry: true
+      - name: Attest Windows package
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright
+          subject-digest: ${{ steps.push.outputs.digest_windows }}
+          push-to-registry: true
+      - name: Attest macOS package
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright
+          subject-digest: ${{ steps.push.outputs.digest_macos }}
+          push-to-registry: true
+      # The attestations above push to the registry with the login of the push step; the pull below is anonymous.
+      - name: Log out of the registry
+        run: oras logout ghcr.io
+      - name: Verify packages are public
+        if: ${{ vars.TTWRIGHT_FIRST_PACKAGE_PUSH != 'true' }}
+        env:
+          OUT: packages
+        run: |
+          set -euo pipefail
+          check() {
+            local target="$1" archive="$2"
+            local digest sha ref pulled
+            digest="$(cat "$OUT/${target}.digest")"
+            sha="$(cat "$OUT/${target}.sha256")"
+            ref="ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright@${digest}"
+            rm -rf "$OUT/pull-${target}"
+            mkdir -p "$OUT/pull-${target}"
+            oras pull "$ref" -o "$OUT/pull-${target}"
+            pulled="$(sha256sum "$OUT/pull-${target}/$(basename "$archive")" | awk '{print $1}')"
+            echo "$target: pulled $pulled (expected $sha)"
+            test "$pulled" = "$sha"
+          }
+          check x86_64-unknown-linux-gnu "$OUT/ttwright-x86_64-unknown-linux-gnu.tar.gz"
+          check x86_64-pc-windows-msvc "$OUT/ttwright-x86_64-pc-windows-msvc.zip"
+          check universal-apple-darwin "$OUT/ttwright-universal-apple-darwin.tar.gz"
+      - name: Record package references
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          OUT: packages
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#v}"
+          summary="$(mktemp)"
+          {
+            echo "## OCI packages"
+            echo
+            echo "| Name | Tag | Digest | Archive SHA-256 |"
+            echo "| --- | --- | --- | --- |"
+            echo "| ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright | ${VERSION}-x86_64-unknown-linux-gnu | $(cat "$OUT/x86_64-unknown-linux-gnu.digest") | $(cat "$OUT/x86_64-unknown-linux-gnu.sha256") |"
+            echo "| ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright | ${VERSION}-x86_64-pc-windows-msvc | $(cat "$OUT/x86_64-pc-windows-msvc.digest") | $(cat "$OUT/x86_64-pc-windows-msvc.sha256") |"
+            echo "| ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright | ${VERSION}-universal-apple-darwin | $(cat "$OUT/universal-apple-darwin.digest") | $(cat "$OUT/universal-apple-darwin.sha256") |"
+          } > "$summary"
+          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+          existing="$(gh release view "$TAG_NAME" --json body -q .body)"
+          notes="$(mktemp)"
+          printf '%s\n' "$existing" > "$notes"
+          printf '\n## Packages\n\n' >> "$notes"
+          cat "$summary" >> "$notes"
+          gh release edit "$TAG_NAME" --notes-file "$notes" --repo "$GITHUB_REPOSITORY"
+
   # The Toolbox's component-bump.yml opens the pull request that moves its ttwright-rs pin to the new tag.
   toolbox:
     needs: [release-please, assets]
@@ -218,3 +370,42 @@ jobs:
         run: |
           gh api repos/JorisJonkers-dev/rauls-trusty-toolbox/dispatches \
             -f event_type=component-release -f 'client_payload[component]=ttwright-rs' -f "client_payload[tag]=$TAG"
+
+  packages-dry-run:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
+        with:
+          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
+      - name: Build Linux binary
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cargo build --release --locked -p ttwright-cli
+          cp target/release/ttwright dist/ttwright-x86_64-unknown-linux-gnu
+      - name: Create archive
+        env:
+          OUT: packages
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          tar -czf "$OUT/ttwright-x86_64-unknown-linux-gnu.tar.gz" -C dist ttwright-x86_64-unknown-linux-gnu -C "$WORKSPACE" LICENSE
+          tar -tzf "$OUT/ttwright-x86_64-unknown-linux-gnu.tar.gz" >/dev/null
+          sha256sum "$OUT/ttwright-x86_64-unknown-linux-gnu.tar.gz" | awk '{print $1}' > "$OUT/sha256"
+      - name: Print what would be pushed
+        env:
+          OUT: packages
+          VERSION: 0.0.0-dry-run
+        run: |
+          set -euo pipefail
+          SHA="$(cat "$OUT/sha256")"
+          echo "Would push: ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright:${VERSION}-x86_64-unknown-linux-gnu"
+          echo "Archive SHA-256: $SHA"

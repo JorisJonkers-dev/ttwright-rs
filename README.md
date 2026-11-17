@@ -35,6 +35,22 @@ You need your own Fallout 3 and Fallout: New Vegas, and the TTW package from its
 [mod.pub](https://mod.pub/ttw/133/files) (an account is needed). Extract the download; the `.mpi` file is inside.
 No game files and no package are in this repository or its releases.
 
+## Packages
+
+The `ttwright` program is published as OCI packages on ghcr.io:
+
+`ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright:<version>-<target>`
+
+where `<version>` is the release tag without the leading `v` and `<target>` is one of
+`x86_64-unknown-linux-gnu`, `x86_64-pc-windows-msvc` or `universal-apple-darwin`. Each package is a `tar.gz`
+(Linux and macOS) or `zip` (Windows) archive containing the binary and `LICENSE`.
+
+Verify a package with:
+
+```sh
+gh attestation verify oci://ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright:<version>-<target> --repo JorisJonkers-dev/ttwright-rs
+```
+
 ## Command line
 
 ```sh
