@@ -93,7 +93,7 @@ cargo test --workspace
 
 | Crate | What it is |
 | --- | --- |
-| `ttwright-core` | the installer library: MPI packages, manifests, checks, asset operations, archives, resume |
+| `ttwright-core` | the installer library: MPI packages, manifests, checks, asset operations, archives, resume; `ttwright_core::api` is the entry point a program links (typed job and result, progress events, cancel and resume, errors with `copy_text()`), and the `ttwright` command is a wrapper over it |
 | `ttwright-cli` | the `ttwright` command |
 | `ttwright-contract` | the result and event Contracts, error codes, the handshake and their JSON Schemas |
 | `ttwright-testkit` | synthetic fixtures for the tests; no game data |

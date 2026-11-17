@@ -41,6 +41,11 @@ pub const EVENTS_VERSIONS: &[u32] = &[1];
 pub const HANDSHAKE_CONTRACT: &str = "ttwright-contracts";
 /// The handshake versions this build can print, oldest first.
 pub const HANDSHAKE_VERSIONS: &[u32] = &[1];
+/// The name of the in-process library API (`ttwright_core::api`), listed by `ttwright contracts --json`.
+pub const API_CONTRACT: &str = "ttwright-api";
+/// The version of the in-process library API. It changes when a call, a type or an error code of that API
+/// changes in a way an existing caller would notice.
+pub const API_VERSION: u32 = 1;
 
 /// The tool that printed a document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -108,6 +113,11 @@ impl Handshake {
                     versions: EVENTS_VERSIONS.to_vec(),
                     supports: None,
                 },
+                ContractInfo {
+                    name: API_CONTRACT.to_owned(),
+                    versions: vec![API_VERSION],
+                    supports: None,
+                },
             ],
         }
     }
@@ -132,7 +142,10 @@ mod tests {
         assert_eq!(h.schema_version, 1);
         assert_eq!(h.tool, ToolInfo::new("1.2.3"));
         let names: Vec<_> = h.contracts.iter().map(|c| c.name.as_str()).collect();
-        assert_eq!(names, ["ttwright-result", "ttwright-events"]);
+        assert_eq!(
+            names,
+            ["ttwright-result", "ttwright-events", "ttwright-api"]
+        );
         let supports = h.contracts[0].supports.as_ref().unwrap();
         assert!(
             supports

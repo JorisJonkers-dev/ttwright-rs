@@ -50,6 +50,8 @@ fn contracts_json_is_the_handshake() {
         "3.4"
     );
     assert_eq!(doc["contracts"][1]["name"], "ttwright-events");
+    assert_eq!(doc["contracts"][2]["name"], "ttwright-api");
+    assert_eq!(doc["contracts"][2]["versions"][0], 1);
     assert_eq!(ttwright(&["contracts"]).status.code(), Some(2));
 }
 
@@ -154,6 +156,27 @@ fn json_mode_never_scans_for_game_copies() {
     let doc = json(&out);
     assert_eq!(doc["error"]["code"], "game_path_missing");
     assert_eq!(doc["error"]["feature"], "fallout3");
+}
+
+#[test]
+fn a_missing_game_copy_in_json_mode_names_the_option_that_answers_it() {
+    let f = Fixture::new("cli-hint");
+    let out = ttwright(&[
+        "install",
+        "--json",
+        "--mpi",
+        f.mpi.to_str().unwrap(),
+        "--dest",
+        f.dest.to_str().unwrap(),
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    let doc = json(&out);
+    check(DocumentKind::Result, &doc).unwrap();
+    assert_eq!(doc["status"], "failed");
+    assert_eq!(doc["error"]["code"], "game_path_missing");
+    assert_eq!(doc["error"]["feature"], "fallout3");
+    let message = doc["error"]["message"].as_str().unwrap();
+    assert!(message.contains("--fo3"), "{message}");
 }
 
 #[test]

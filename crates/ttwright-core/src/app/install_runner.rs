@@ -233,6 +233,15 @@ where
         mpi_package_path: mpi_dir.to_string_lossy().to_string(),
     };
 
+    // A cancel that arrives before anything is written (the package read, the preflight) ends the install here, so
+    // no journal and no destination folder is left behind and no resume is offered.
+    if request.cancel.is_cancelled() {
+        return Err(InstallError::new(
+            ErrorCode::Cancelled,
+            "The install was cancelled before it started; run it again to install",
+        )
+        .into());
+    }
     let journal = if request.dry_run {
         Journal::in_memory()
     } else {
@@ -390,7 +399,7 @@ where
     if stats.cancelled {
         return Err(InstallError::new(
             ErrorCode::Cancelled,
-            "The install was cancelled; run it again with --resume to continue",
+            "The install was cancelled; resuming it continues from where it stopped",
         )
         .into());
     }
@@ -579,15 +588,15 @@ where
         }
     }
 
-    for (needed, path, game, flag) in [
-        (needs.fallout3, &paths.fallout3, "fallout3", "--fo3"),
-        (needs.falloutnv, &paths.falloutnv, "falloutnv", "--fnv"),
-        (needs.oblivion, &paths.oblivion, "oblivion", "--oblivion"),
+    for (needed, path, game) in [
+        (needs.fallout3, &paths.fallout3, "fallout3"),
+        (needs.falloutnv, &paths.falloutnv, "falloutnv"),
+        (needs.oblivion, &paths.oblivion, "oblivion"),
     ] {
         if needed && path.is_none() {
             return Err(InstallError::new(
                 ErrorCode::GamePathMissing,
-                format!("The package needs the {game} copy; pass it with {flag}"),
+                format!("The package needs the {game} copy, and none was given"),
             )
             .with_feature(game)
             .into());
