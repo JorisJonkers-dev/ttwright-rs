@@ -11,14 +11,12 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::Mutex;
 
 use clap::{Parser, Subcommand};
 use ttwright_contract::{
-    DocumentKind, ErrorCode, Event, EventLine, Handshake, PackageInfo, ResultDoc, Status,
-    schema_json, to_line,
+    DocumentKind, ErrorCode, Event, EventLine, Handshake, ResultDoc, Status, schema_json, to_line,
 };
-use ttwright_core::app::{CancelToken, InstallEvent, InstallOutcome, InstallRequest, run_install};
+use ttwright_core::api::{self, CancelToken, InstallJob, InstallOutput, Progress};
 use ttwright_core::services::Logger;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -203,26 +201,39 @@ fn main() -> ExitCode {
     }
 }
 
-/// Where events go in JSON mode.
-enum Events {
-    Stderr,
-    File(Mutex<File>),
-}
+/// Where events go in JSON mode, and the log lines for people.
+struct Events(Option<Box<dyn Write + Send>>);
 
-impl Events {
-    fn send(&self, event: Event) {
-        let line = to_line(&EventLine::new(event)) + "\n";
-        match self {
-            Self::Stderr => {
-                let _ = std::io::stderr().lock().write_all(line.as_bytes());
-            }
-            Self::File(file) => {
-                if let Ok(mut f) = file.lock() {
-                    let _ = f.write_all(line.as_bytes());
-                }
-            }
+impl Progress for Events {
+    fn report(&mut self, event: &Event) {
+        if let Event::Warning { message } = event {
+            tracing::warn!("{}", message);
+        }
+        if let Event::Progress {
+            done, of, message, ..
+        } = event
+            && (done % 1000 == 0 || done == of)
+        {
+            tracing::info!("Progress: {done}/{of} {message}");
+        }
+        if let Some(out) = &mut self.0 {
+            let line = to_line(&EventLine::new(event.clone())) + "\n";
+            let _ = out.write_all(line.as_bytes());
         }
     }
+}
+
+/// The command line's own words for a library error: the option that answers it.
+fn with_hint(doc: &mut ResultDoc) {
+    let Some(error) = &mut doc.error else { return };
+    let hint = match (error.code, error.feature.as_deref()) {
+        (ErrorCode::Cancelled, _) => " (run it again with --resume)",
+        (ErrorCode::GamePathMissing, Some("fallout3")) => " (pass it with --fo3)",
+        (ErrorCode::GamePathMissing, Some("falloutnv")) => " (pass it with --fnv)",
+        (ErrorCode::GamePathMissing, Some("oblivion")) => " (pass it with --oblivion)",
+        _ => "",
+    };
+    error.message.push_str(hint);
 }
 
 fn install(args: &InstallArgs) -> ExitCode {
@@ -246,11 +257,11 @@ fn install(args: &InstallArgs) -> ExitCode {
         .unwrap_or("Installation");
     let logger = Logger::init_with_console(log_label, !args.json).ok();
 
-    let events = if args.json {
+    let mut events = if args.json {
         match &args.events {
-            None => Some(Events::Stderr),
+            None => Events(Some(Box::new(std::io::stderr()))),
             Some(path) => match File::create(path) {
-                Ok(f) => Some(Events::File(Mutex::new(f))),
+                Ok(f) => Events(Some(Box::new(f))),
                 Err(e) => {
                     let mut doc = ResultDoc::new(VERSION);
                     doc.fail(
@@ -264,10 +275,10 @@ fn install(args: &InstallArgs) -> ExitCode {
             },
         }
     } else {
-        None
+        Events(None)
     };
 
-    let request = InstallRequest {
+    let job = InstallJob {
         mpi_path: args.mpi.clone(),
         fallout3_path: args.fo3.clone(),
         falloutnv_path: args.fnv.clone(),
@@ -277,71 +288,20 @@ fn install(args: &InstallArgs) -> ExitCode {
         detect_missing: !args.no_detect && (args.detect || !args.json),
         resume: args.resume,
         allow_unsupported_version: args.allow_unsupported_version,
-        cancel,
     };
 
-    let outcome = run_install(request, |event| match event {
-        InstallEvent::Log(message) => tracing::info!("{}", message),
-        InstallEvent::Event(event) => {
-            if let Event::Warning { message } = &event {
-                tracing::warn!("{}", message);
-            }
-            if let Event::Progress {
-                done, of, message, ..
-            } = &event
-                && (done % 1000 == 0 || done == of)
-            {
-                tracing::info!("Progress: {done}/{of} {message}");
-            }
-            if let Some(events) = &events {
-                events.send(event);
-            }
-        }
-    });
-
-    let doc = result_document(args, &outcome, logger.as_ref());
-    if let Some(events) = &events {
-        events.send(Event::Finished {
-            status: doc.status,
-            code: doc.error.as_ref().map(|e| e.code),
-        });
-    }
+    let mut doc = match api::install(&job, &mut events, &cancel) {
+        Ok(InstallOutput::Done { result } | InstallOutput::Cancelled { result }) => *result,
+        Err(e) => *e.result,
+    };
+    with_hint(&mut doc);
+    doc.log_file = logger.as_ref().map(|l| l.log_path().display().to_string());
     if args.json {
         println!("{}", to_line(&doc));
     } else {
         print_summary(&doc);
     }
     ExitCode::from(doc.exit_code)
-}
-
-fn result_document(
-    args: &InstallArgs,
-    outcome: &InstallOutcome,
-    logger: Option<&Logger>,
-) -> ResultDoc {
-    let report = &outcome.report;
-    let mut doc = ResultDoc::new(VERSION);
-    doc.package = report.package_name.as_ref().map(|title| PackageInfo {
-        title: title.clone(),
-        version: report.package_version.clone().unwrap_or_default(),
-        supported: report.package_supported,
-    });
-    doc.output_dir = Some(args.dest.display().to_string());
-    doc.checks_passed = report.checks_passed;
-    doc.assets = report.assets;
-    doc.archives = report.archives;
-    doc.post_install = report.post_install;
-    doc.resumed = report.resumed;
-    doc.dry_run = args.dry_run;
-    doc.elapsed_ms = u64::try_from(report.elapsed.as_millis()).unwrap_or(u64::MAX);
-    doc.log_file = logger.map(|l| l.log_path().display().to_string());
-    for message in &report.messages {
-        doc.note(message.clone());
-    }
-    if let Some(error) = &outcome.error {
-        doc.fail(error.code, error.message.clone(), error.feature.clone());
-    }
-    doc
 }
 
 fn print_summary(doc: &ResultDoc) {

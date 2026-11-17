@@ -16,6 +16,15 @@ Nothing resolves or releases from a moving branch: `main` is an integration bran
 A dry run (Actions, Release, Run workflow) builds and attests the same assets from any branch and
 keeps them as a workflow artifact, without a release.
 
+The library API (`ttwright_core::api`: `install(job, &mut dyn Progress, &CancelToken)`) carries its own
+version, `ttwright_contract::API_VERSION`, which `ttwright contracts --json` lists as the `ttwright-api`
+contract. A caller links a tagged release; a change to a call, a type or an error code that an existing caller
+would notice raises that version in the same release.
+
+| Release | Result | Events | Library API |
+| --- | --- | --- | --- |
+| first release with `ttwright_core::api` (after 0.3.0) | 1 | 1 | 1 |
+
 SemVer: before 1.0 a minor bump is the breaking lever (`bump-minor-pre-major`).
 
 Reusable workflows and actions are pinned by full commit SHA with the tag in a trailing comment;

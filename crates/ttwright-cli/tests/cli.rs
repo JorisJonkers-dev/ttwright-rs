@@ -50,6 +50,8 @@ fn contracts_json_is_the_handshake() {
         "3.4"
     );
     assert_eq!(doc["contracts"][1]["name"], "ttwright-events");
+    assert_eq!(doc["contracts"][2]["name"], "ttwright-api");
+    assert_eq!(doc["contracts"][2]["versions"][0], 1);
     assert_eq!(ttwright(&["contracts"]).status.code(), Some(2));
 }
 
