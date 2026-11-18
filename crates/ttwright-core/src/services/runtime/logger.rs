@@ -1,9 +1,14 @@
 use anyhow::{Context, Result};
-use chrono::Local;
 use std::fs;
 use std::path::PathBuf;
+use time::macros::format_description;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+
+/// The current local time. When the local offset cannot be read (some Unix processes with threads), it is UTC.
+fn now_local() -> time::OffsetDateTime {
+    time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc())
+}
 
 /// Logger configuration and initialization
 pub struct Logger {
@@ -67,7 +72,14 @@ impl Logger {
         tracing::info!("=== MPI Installer Log ===");
         tracing::info!("Package: {}", package_name);
         tracing::info!("Log file: {}", log_path.display());
-        tracing::info!("Started at: {}", Local::now().format("%Y-%m-%d %H:%M:%S"));
+        tracing::info!(
+            "Started at: {}",
+            now_local()
+                .format(format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second]"
+                ))
+                .unwrap_or_default()
+        );
 
         Ok(Self {
             _guard: guard,
@@ -111,7 +123,11 @@ impl Logger {
         fs::create_dir_all(&log_dir)
             .with_context(|| format!("Failed to create log directory: {}", log_dir.display()))?;
 
-        let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
+        let timestamp = now_local()
+            .format(format_description!(
+                "[year]-[month]-[day]_[hour]-[minute]-[second]"
+            ))
+            .context("Failed to format the log file time")?;
         let safe_name = Self::sanitize_filename(package_name);
         let log_filename = format!("{}_{}.log", timestamp, safe_name);
         Ok(log_dir.join(log_filename))
@@ -157,7 +173,14 @@ impl Logger {
             bsa_created,
             bsa_failed
         );
-        tracing::info!("Completed at: {}", Local::now().format("%Y-%m-%d %H:%M:%S"));
+        tracing::info!(
+            "Completed at: {}",
+            now_local()
+                .format(format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second]"
+                ))
+                .unwrap_or_default()
+        );
         tracing::info!("Log saved to: {}", self.log_path.display());
     }
 

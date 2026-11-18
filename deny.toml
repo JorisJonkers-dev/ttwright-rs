@@ -13,10 +13,7 @@ feature-depth = 1
 version = 2
 db-urls = ["https://github.com/rustsec/advisory-db"]
 # Add RUSTSEC ids here only with a comment saying why the advisory does not apply.
-ignore = [
-    # chrono is unmaintained; no vulnerability is known. Replacing it with `time` is #21.
-    { id = "RUSTSEC-2026-0543", reason = "unmaintained only, no known vulnerability; replacement tracked in #21" },
-]
+ignore = []
 yanked = "warn"
 
 [licenses]
