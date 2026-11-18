@@ -1,4 +1,11 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>JorisJonkers-dev/renovate-config"]
+  "extends": ["github>JorisJonkers-dev/renovate-config"],
+  "packageRules": [
+    {
+      "description": "Crates from crates.io wait 7 days after publication, as Cargo does (.cargo/config.toml). The organisation's own git dependencies have their own rules.",
+      "matchManagers": ["cargo"],
+      "minimumReleaseAge": "7 days"
+    }
+  ]
 }
