@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.4.2...v0.4.3) (2026-11-18)
+
+
+### Bug Fixes
+
+* **deps:** hold cc below 1.9 for Windows builds ([#36](https://github.com/JorisJonkers-dev/ttwright-rs/issues/36)) ([62d7853](https://github.com/JorisJonkers-dev/ttwright-rs/commit/62d78531c4ac7676e252f47b30927516a206718a))
+
 ## [0.4.2](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.4.1...v0.4.2) (2026-11-18)
 
 
