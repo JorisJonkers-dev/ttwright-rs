@@ -13,7 +13,6 @@ publish.workspace = true
 ttwright-contract = { workspace = true }
 anyhow = { workspace = true }
 ba2 = { workspace = true }
-chrono = { workspace = true }
 crossbeam-channel = { workspace = true }
 dirs = { workspace = true }
 hex = { workspace = true }
@@ -34,6 +33,7 @@ sysinfo = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
+time = { workspace = true }
 vorbis_rs = { workspace = true }
 walkdir = { workspace = true }
 # Optional in-process FFmpeg audio backend for benchmarking.

@@ -28,7 +28,7 @@ ttwright-testkit = { path = "crates/ttwright-testkit" }
 
 anyhow = "1.0.104"
 ba2 = "3.0.1"
-chrono = "0.4.44"
+time = { version = "0.3.47", default-features = false, features = ["std", "parsing", "formatting", "local-offset", "macros"] }
 clap = { version = "4.6.1", features = ["derive"] }
 crossbeam-channel = "0.5.15"
 ctrlc = "3.5.2"

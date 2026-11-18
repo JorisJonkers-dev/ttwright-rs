@@ -188,7 +188,9 @@ pub fn check_manifest(
     for attr in manifest.file_attrs.iter().flatten() {
         no_extra(&attr.extra, "file_attr")?;
         let when = attr.last_modified.as_deref().unwrap_or_default();
-        if chrono::DateTime::parse_from_rfc3339(when).is_err() {
+        if time::OffsetDateTime::parse(when, &time::format_description::well_known::Rfc3339)
+            .is_err()
+        {
             return Err(invalid(format!(
                 "the file time {when:?} is not an RFC 3339 date"
             )));

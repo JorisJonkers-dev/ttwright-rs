@@ -66,8 +66,15 @@ fn every_supported_operation_installs() {
         .unwrap()
         .modified()
         .unwrap();
-    let expected = chrono::DateTime::parse_from_rfc3339("2008-10-01T12:00:00Z").unwrap();
-    assert_eq!(modified, std::time::SystemTime::from(expected));
+    let expected = time::OffsetDateTime::parse(
+        "2008-10-01T12:00:00Z",
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    assert_eq!(
+        modified,
+        std::time::UNIX_EPOCH + std::time::Duration::from_secs(expected.unix_timestamp() as u64)
+    );
     assert!(
         !f.dest.join(JOURNAL_FILE).exists(),
         "a finished install removes its journal"

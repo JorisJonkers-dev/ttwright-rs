@@ -28,10 +28,22 @@ pub fn apply_file_attrs(attrs: &[FileAttr], destination: &str) -> Result<(usize,
     Ok((set, failed))
 }
 
+/// The instant as a `SystemTime`, before 1970 too (`time` has no conversion of its own).
+fn system_time(instant: time::OffsetDateTime) -> std::time::SystemTime {
+    let secs = instant.unix_timestamp();
+    let nanos = instant.nanosecond();
+    if secs >= 0 {
+        std::time::UNIX_EPOCH + std::time::Duration::new(secs as u64, nanos)
+    } else {
+        std::time::UNIX_EPOCH - std::time::Duration::from_secs(secs.unsigned_abs())
+            + std::time::Duration::from_nanos(u64::from(nanos))
+    }
+}
+
 fn apply_one(attr: &FileAttr, destination: &str) -> Result<()> {
     let raw = attr.value.as_deref().unwrap_or_default();
     let when = attr.last_modified.as_deref().unwrap_or_default();
-    let time = chrono::DateTime::parse_from_rfc3339(when)
+    let instant = time::OffsetDateTime::parse(when, &time::format_description::well_known::Rfc3339)
         .with_context(|| format!("{raw}: the time {when:?} is not an RFC 3339 date"))?;
     let path = raw.replace("%DESTINATION%", destination).replace('\\', "/");
     let path = post_command_path(destination, &path)?;
@@ -45,7 +57,7 @@ fn apply_one(attr: &FileAttr, destination: &str) -> Result<()> {
         .write(true)
         .open(&path)
         .with_context(|| format!("Failed to open {}", path.display()))?;
-    file.set_modified(std::time::SystemTime::from(time))
+    file.set_modified(system_time(instant))
         .with_context(|| format!("Failed to set the time of {}", path.display()))?;
     tracing::info!("  File time: {} = {}", path.display(), when);
     Ok(())
@@ -62,6 +74,28 @@ mod tests {
             last_modified: Some(when.to_owned()),
             extra: Default::default(),
         }
+    }
+
+    #[test]
+    fn system_time_is_exact_before_and_after_the_epoch() {
+        let before = time::OffsetDateTime::parse(
+            "1969-12-31T23:59:59.5Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap();
+        assert_eq!(
+            system_time(before),
+            std::time::UNIX_EPOCH - std::time::Duration::from_millis(500)
+        );
+        let after = time::OffsetDateTime::parse(
+            "1970-01-01T00:00:01.25Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap();
+        assert_eq!(
+            system_time(after),
+            std::time::UNIX_EPOCH + std::time::Duration::from_millis(1250)
+        );
     }
 
     #[test]
@@ -84,7 +118,11 @@ mod tests {
             .unwrap()
             .modified()
             .unwrap();
-        let expected = chrono::DateTime::parse_from_rfc3339("2008-10-01T12:00:00Z").unwrap();
-        assert_eq!(modified, std::time::SystemTime::from(expected));
+        let expected = time::OffsetDateTime::parse(
+            "2008-10-01T12:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap();
+        assert_eq!(modified, system_time(expected));
     }
 }
