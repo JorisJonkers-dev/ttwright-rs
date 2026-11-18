@@ -5,6 +5,7 @@ members = [
     "crates/ttwright-cli",
     "crates/ttwright-contract",
     "crates/ttwright-testkit",
+    "crates/xtask",
 ]
 # fuzz/ and tools/coverage-gate are their own workspaces (libfuzzer-sys and the gate stay out of the shipped crates).
 exclude = ["fuzz", "tools"]
