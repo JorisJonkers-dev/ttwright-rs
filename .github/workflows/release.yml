@@ -258,11 +258,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
-          GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
           OUT: packages
         run: |
           set -euo pipefail
+          # The commit the tag points at (the job checked the tag out), also when the workflow runs from main.
+          REVISION="$(git rev-parse HEAD)"
           VERSION="${TAG_NAME#v}"
           echo "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
@@ -271,7 +272,7 @@ jobs:
             local ref="ghcr.io/jorisjonkers-dev/ttwright-rs:${VERSION}-${target}"
             (cd "$OUT" && oras push "$ref" "$(basename "$archive")" \
               --annotation "org.opencontainers.image.source=https://github.com/JorisJonkers-dev/ttwright-rs" \
-              --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+              --annotation "org.opencontainers.image.revision=${REVISION}" \
               --annotation "org.opencontainers.image.licenses=GPL-3.0-only")
             local digest
             digest="$(oras resolve "$ref")"
