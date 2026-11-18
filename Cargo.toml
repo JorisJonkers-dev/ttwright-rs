@@ -26,32 +26,32 @@ ttwright-core = { path = "crates/ttwright-core" }
 ttwright-contract = { path = "crates/ttwright-contract" }
 ttwright-testkit = { path = "crates/ttwright-testkit" }
 
-anyhow = "1.0"
-ba2 = "3.0.1"
-chrono = "0.4"
-clap = { version = "4.0", features = ["derive"] }
-crossbeam-channel = "0.5"
-ctrlc = "3.4"
-dirs = "6.0"
-hex = "0.4"
-hound = "3.5"
-indicatif = "0.18"
-libc = "0.2"
-lz4_flex = "0.13"
-md-5 = "0.10"
-mp3lame-encoder = "0.2"
-oxidelta = { version = "0.1", default-features = false, features = ["zlib-secondary"] }
-rayon = "1.10"
-rubato = "0.16"
-rusqlite = { version = "0.41", features = ["bundled"] }
-schemars = { version = "1.2.1", default-features = false, features = ["derive", "std"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-sha1 = "0.10"
-symphonia = { version = "0.5", features = ["ogg", "wav", "pcm", "vorbis", "mp3"] }
-sysinfo = "0.39"
-tracing = "0.1.44"
-tracing-appender = "0.2.4"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-vorbis_rs = "0.5"
-walkdir = "2.5"
+anyhow = "=1.0.104"
+ba2 = "=3.0.1"
+chrono = "=0.4.44"
+clap = { version = "=4.6.1", features = ["derive"] }
+crossbeam-channel = "=0.5.15"
+ctrlc = "=3.5.2"
+dirs = "=6.0.0"
+hex = "=0.4.3"
+hound = "=3.5.1"
+indicatif = "=0.18.4"
+libc = "=0.2.186"
+lz4_flex = "=0.13.1"
+md-5 = "=0.10.6"
+mp3lame-encoder = "=0.2.4"
+oxidelta = { version = "=0.1.4", default-features = false, features = ["zlib-secondary"] }
+rayon = "=1.12.0"
+rubato = "=0.16.2"
+rusqlite = { version = "=0.41.1", features = ["bundled"] }
+schemars = { version = "=1.2.3", default-features = false, features = ["derive", "std"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.150"
+sha1 = "=0.10.6"
+symphonia = { version = "=0.5.5", features = ["ogg", "wav", "pcm", "vorbis", "mp3"] }
+sysinfo = "=0.39.2"
+tracing = "=0.1.44"
+tracing-appender = "=0.2.5"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "fmt"] }
+vorbis_rs = "=0.5.5"
+walkdir = "=2.5.0"

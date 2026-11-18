@@ -9,8 +9,8 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "0.4"
-serde_json = "1.0"
+libfuzzer-sys = "=0.4.13"
+serde_json = "=1.0.154"
 ttwright-core = { path = "../crates/ttwright-core" }
 
 # Own workspace root: keeps libfuzzer-sys out of the shipped crates and the root lockfile.
