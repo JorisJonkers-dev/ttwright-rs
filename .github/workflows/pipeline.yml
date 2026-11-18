@@ -68,9 +68,27 @@ jobs:
         if: ${{ !cancelled() }}
         run: cargo test --workspace --locked
 
+  windows-newest-cc:
+    name: Build with the newest cc the bound allows (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Resolve the newest cc the workspace allows
+        run: cargo update -p cc
+      - name: Show the cc that was built
+        run: cargo tree -i cc
+      - name: Build with the cc the bound allows
+        run: cargo build -p ttwright-core --all-targets
+
   pipeline-complete:
     name: Pipeline Complete
-    needs: [hygiene, pr-title, quarantine, platforms]
+    needs: [hygiene, pr-title, quarantine, platforms, windows-newest-cc]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
