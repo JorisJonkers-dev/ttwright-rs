@@ -69,7 +69,7 @@ jobs:
         run: cargo test --workspace --locked
 
   windows-newest-cc:
-    name: Build with newest cc (Windows)
+    name: Build with the newest cc the bound allows (Windows)
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
@@ -83,7 +83,7 @@ jobs:
         run: cargo update -p cc
       - name: Show the cc that was built
         run: cargo tree -i cc
-      - name: Build with the newest cc
+      - name: Build with the cc the bound allows
         run: cargo build -p ttwright-core --all-targets
 
   pipeline-complete:
