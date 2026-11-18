@@ -39,7 +39,7 @@ No game files and no package are in this repository or its releases.
 
 The `ttwright` program is published as OCI packages on ghcr.io:
 
-`ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright:<version>-<target>`
+`ghcr.io/jorisjonkers-dev/ttwright-rs:<version>-<target>`
 
 where `<version>` is the release tag without the leading `v` and `<target>` is one of
 `x86_64-unknown-linux-gnu`, `x86_64-pc-windows-msvc` or `universal-apple-darwin`. Each package is a `tar.gz`
@@ -48,7 +48,7 @@ where `<version>` is the release tag without the leading `v` and `<target>` is o
 Verify a package with:
 
 ```sh
-gh attestation verify oci://ghcr.io/jorisjonkers-dev/ttwright-rs-ttwright:<version>-<target> --repo JorisJonkers-dev/ttwright-rs
+gh attestation verify oci://ghcr.io/jorisjonkers-dev/ttwright-rs:<version>-<target> --repo JorisJonkers-dev/ttwright-rs
 ```
 
 ## Command line
