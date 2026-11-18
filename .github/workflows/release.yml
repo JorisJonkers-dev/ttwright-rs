@@ -84,10 +84,6 @@ jobs:
           ref: ${{ steps.release-pr.outputs.branch }}
           persist-credentials: false
       - if: ${{ steps.release-pr.outputs.branch != '' }}
-        uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
-        with:
-          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
-      - if: ${{ steps.release-pr.outputs.branch != '' }}
         name: Refresh the lock entries of the workspace crates
         env:
           PUSH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
@@ -127,9 +123,6 @@ jobs:
         with:
           ref: ${{ inputs.tag || needs.release-please.outputs.tag_name || github.ref }}
           persist-credentials: false
-      - uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
-        with:
-          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
       - name: Build
         shell: bash
         env:
@@ -393,9 +386,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
-        with:
-          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
       - name: Build Linux binary
         run: |
           set -euo pipefail
