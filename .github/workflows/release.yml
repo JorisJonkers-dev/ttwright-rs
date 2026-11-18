@@ -4,7 +4,8 @@
 # and SHA256SUMS as assets, with a build provenance attestation over all of them (scripts/release-assets.sh). Then
 # the Toolbox is told, so its Component bump workflow opens the pull request that pins the new tag.
 # `workflow_dispatch` is the dry run: it builds and attests the same assets from the selected ref and keeps them as
-# a workflow artifact; it creates no release and tells no one.
+# a workflow artifact; it creates no release and tells no one. With `tag` and `publish` it republishes that existing tag
+# (assets and packages) and still tells no one.
 name: Release
 
 on:
@@ -14,6 +15,16 @@ on:
     paths:
       - .github/workflows/release.yml
   workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing release tag, vX.Y.Z. Empty runs the dry run from the selected ref
+        required: false
+        type: string
+      publish:
+        description: Publish the tag's assets and package (false is a dry run)
+        required: false
+        default: false
+        type: boolean
 
 # Each job asks for what it needs; the workflow itself holds nothing.
 permissions: {}
@@ -114,7 +125,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-please.outputs.tag_name || github.ref }}
+          ref: ${{ inputs.tag || needs.release-please.outputs.tag_name || github.ref }}
           persist-credentials: false
       - uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@b14d5e031f1abd5bec45e50c898e9e73f3ffc534 # v0.50.4
         with:
@@ -172,7 +183,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-please.outputs.tag_name || github.ref }}
+          ref: ${{ inputs.tag || needs.release-please.outputs.tag_name || github.ref }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -185,13 +196,13 @@ jobs:
         with:
           subject-path: dist/*
       - name: Upload to the release
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.publish) }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.release-please.outputs.tag_name }}
+          TAG: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
         run: gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
       - name: Keep the assets of a dry run
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && !(inputs.tag != '' && inputs.publish) }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-assets-dry-run
@@ -200,7 +211,7 @@ jobs:
 
   packages:
     needs: [release-please, assets]
-    if: ${{ !cancelled() && github.event_name == 'push' && needs.assets.result == 'success' }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.publish)) && needs.assets.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -211,7 +222,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-please.outputs.tag_name || github.ref }}
+          ref: ${{ inputs.tag || needs.release-please.outputs.tag_name || github.ref }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -246,12 +257,13 @@ jobs:
         id: push
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
-          GITHUB_SHA: ${{ github.sha }}
+          TAG_NAME: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
           GITHUB_ACTOR: ${{ github.actor }}
           OUT: packages
         run: |
           set -euo pipefail
+          # The commit the tag points at (the job checked the tag out), also when the workflow runs from main.
+          REVISION="$(git rev-parse HEAD)"
           VERSION="${TAG_NAME#v}"
           echo "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
@@ -260,7 +272,7 @@ jobs:
             local ref="ghcr.io/jorisjonkers-dev/ttwright-rs:${VERSION}-${target}"
             (cd "$OUT" && oras push "$ref" "$(basename "$archive")" \
               --annotation "org.opencontainers.image.source=https://github.com/JorisJonkers-dev/ttwright-rs" \
-              --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+              --annotation "org.opencontainers.image.revision=${REVISION}" \
               --annotation "org.opencontainers.image.licenses=GPL-3.0-only")
             local digest
             digest="$(oras resolve "$ref")"
@@ -324,7 +336,7 @@ jobs:
       - name: Record package references
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          TAG_NAME: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
           OUT: packages
         run: |
           set -euo pipefail
