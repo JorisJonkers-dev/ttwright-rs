@@ -73,9 +73,20 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          RELEASE_PR: ${{ steps.rp.outputs.pr }}
         run: |
           set -euo pipefail
-          branch="$(gh pr list --repo "$REPO" --state open --label 'autorelease: pending' --json headRefName --jq '.[0].headRefName // ""')"
+          # release-please reports the pull request it opened or changed in `pr`; use that first. The label
+          # lookup is the fallback, retried, because the label is added after the pull request is opened.
+          branch=""
+          if [[ -n $RELEASE_PR ]]; then
+            branch="$(jq -r '.headBranchName // ""' <<<"$RELEASE_PR")"
+          fi
+          for _ in 1 2 3 4 5 6; do
+            [[ -n $branch ]] && break
+            branch="$(gh pr list --repo "$REPO" --state open --label 'autorelease: pending' --json headRefName --jq '.[0].headRefName // ""')"
+            [[ -n $branch ]] || sleep 10
+          done
           echo "branch=$branch" >>"$GITHUB_OUTPUT"
           echo "release pull request branch: ${branch:-none}"
       - if: ${{ steps.release-pr.outputs.branch != '' }}
