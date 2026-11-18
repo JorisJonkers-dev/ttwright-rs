@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.4.1...v0.4.2) (2026-11-18)
+
+
+### Bug Fixes
+
+* **deps:** use caret requirements so the Components link together ([#37](https://github.com/JorisJonkers-dev/ttwright-rs/issues/37)) ([7602461](https://github.com/JorisJonkers-dev/ttwright-rs/commit/76024612a6b7c720ec78994cecda08588c2383d3))
+
 ## [0.4.1](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.4.0...v0.4.1) (2026-11-18)
 
 
