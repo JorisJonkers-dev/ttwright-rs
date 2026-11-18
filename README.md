@@ -51,6 +51,8 @@ Verify a package with:
 gh attestation verify oci://ghcr.io/jorisjonkers-dev/ttwright-rs:<version>-<target> --repo JorisJonkers-dev/ttwright-rs
 ```
 
+To republish an existing tag, for example after the package was renamed, run the release workflow by hand on `main` with the tag and `publish` set: `gh workflow run release.yml -R JorisJonkers-dev/ttwright-rs --ref main -f tag=vX.Y.Z -f publish=true`. The run builds the binaries of that tag, uploads the assets to its GitHub release and pushes the packages again; it tells no one. Without `publish=true` it is a dry run that pushes nothing.
+
 ## Command line
 
 ```sh
