@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.3.0...v0.4.0) (2026-11-17)
+
+
+### Features
+
+* **api:** library API for in-process installs with progress, cancel, resume and copyable errors ([#20](https://github.com/JorisJonkers-dev/ttwright-rs/issues/20)) ([ceb08cc](https://github.com/JorisJonkers-dev/ttwright-rs/commit/ceb08cc023c411220f9679c7dbb0b09decef66ec))
+
+
+### Bug Fixes
+
+* **deps:** update libz-sys for RUSTSEC-2026-0544 and note chrono's unmaintained advisory ([#22](https://github.com/JorisJonkers-dev/ttwright-rs/issues/22)) ([b632952](https://github.com/JorisJonkers-dev/ttwright-rs/commit/b6329528ade38a09ccb99643b9039103aceea68d))
+
 ## [0.3.0](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.2.0...v0.3.0) (2026-11-16)
 
 
