@@ -363,7 +363,8 @@ jobs:
           cat "$summary" >> "$notes"
           gh release edit "$TAG_NAME" --notes-file "$notes" --repo "$GITHUB_REPOSITORY"
 
-  # The Toolbox's component-bump.yml opens the pull request that moves its ttwright-rs pin to the new tag.
+  # The Toolbox's components.yml (a self-hosted Renovate) opens the pull request that moves its ttwright-rs pin to the new
+  # release. This dispatch starts it at once; GitHub delays the Toolbox's own schedule by hours.
   toolbox:
     needs: [release-please, assets]
     if: ${{ !cancelled() && github.event_name == 'push' && needs.assets.result == 'success' }}
