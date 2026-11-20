@@ -1812,7 +1812,7 @@ dependencies = [
 
 [[package]]
 name = "ttwright-cli"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "clap",
@@ -1826,7 +1826,7 @@ dependencies = [
 
 [[package]]
 name = "ttwright-contract"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "schemars",
  "serde",
@@ -1835,7 +1835,7 @@ dependencies = [
 
 [[package]]
 name = "ttwright-core"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "ba2",
@@ -1871,7 +1871,7 @@ dependencies = [
 
 [[package]]
 name = "ttwright-testkit"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "ba2",
  "oxidelta",
@@ -2196,7 +2196,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "xtask"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "serde_json",
 ]
