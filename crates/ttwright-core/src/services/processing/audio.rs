@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use hound::{SampleFormat, WavSpec, WavWriter};
-use mp3lame_encoder::{Builder, DualPcm, FlushNoGap, InterleavedPcm};
+use mp3lame_encoder::{Builder, DualPcm, FlushNoGap, MonoPcm};
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
@@ -694,8 +694,8 @@ impl AudioProcessor {
         let mut mp3_data = Vec::new();
 
         if audio.channels == 1 {
-            // Mono - use interleaved with 1 channel
-            let input = InterleavedPcm(&samples_i16);
+            // Mono - the samples are one channel, not left/right pairs
+            let input = MonoPcm(&samples_i16);
             let mut output: Vec<MaybeUninit<u8>> =
                 vec![
                     MaybeUninit::uninit();
@@ -897,6 +897,47 @@ mod tests {
         let mp3 = to_mp3("-c:1", &sine_wav(2, 44100, 1.0)).unwrap();
         assert_eq!(mp3_header(&mp3).0, 1);
         assert_eq!(decode_mp3(&mp3).channels, 1);
+    }
+
+    /// Decoded length in seconds; asserts one channel and that the length is within encoder padding of `seconds`.
+    fn assert_mono_length(mp3: &[u8], seconds: f32) {
+        let decoded = decode_mp3(mp3);
+        assert_eq!(decoded.channels, 1);
+        let got = decoded.samples.len() as f32 / decoded.sample_rate as f32;
+        // Two MPEG-1 frames (2 x 1152 samples) cover encoder delay and padding.
+        assert!(
+            (got - seconds).abs() < 2.0 * 1152.0 / 44100.0 + 0.01,
+            "decoded {got} s for a {seconds} s source"
+        );
+    }
+
+    #[test]
+    fn a_mono_source_keeps_its_length_with_no_channel_parameter() {
+        let mp3 = to_mp3("", &sine_wav(1, 44100, 1.0)).unwrap();
+        assert_eq!(mp3_header(&mp3).0, 1);
+        assert_mono_length(&mp3, 1.0);
+    }
+
+    #[test]
+    fn a_mono_source_keeps_its_length_with_one_channel_asked() {
+        let mp3 = to_mp3("-c:1", &sine_wav(1, 44100, 1.0)).unwrap();
+        assert_eq!(mp3_header(&mp3).0, 1);
+        assert_mono_length(&mp3, 1.0);
+    }
+
+    #[test]
+    fn a_stereo_source_downmixed_to_one_channel_keeps_its_length() {
+        let mp3 = to_mp3("-c:1", &sine_wav(2, 44100, 1.0)).unwrap();
+        assert_eq!(mp3_header(&mp3).0, 1);
+        assert_mono_length(&mp3, 1.0);
+    }
+
+    #[test]
+    fn a_stereo_source_keeps_its_length() {
+        let decoded = decode_mp3(&to_mp3("", &sine_wav(2, 44100, 1.0)).unwrap());
+        assert_eq!(decoded.channels, 2);
+        let got = decoded.samples.len() as f32 / 2.0 / decoded.sample_rate as f32;
+        assert!((got - 1.0).abs() < 2.0 * 1152.0 / 44100.0 + 0.01, "{got}");
     }
 
     #[test]
