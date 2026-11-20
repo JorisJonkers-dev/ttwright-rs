@@ -1,10 +1,10 @@
+use crate::services::system_memory::SystemMemory;
 use anyhow::{Context, Result, bail};
 use ba2::tes4::Archive;
 use ba2::{Borrowed, ByteSlice, Reader};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use sysinfo::System;
 use tracing::info;
 
 /// Handles reading from and writing to BSA archives
@@ -91,9 +91,7 @@ impl BsaExtractCache {
     /// Create a new cache with smart memory limits
     /// Uses minimum of: 10GB hard cap, or 80% of system RAM
     pub fn new() -> Self {
-        let mut sys = System::new_all();
-        sys.refresh_memory();
-        let system_ram = sys.total_memory(); // in bytes
+        let system_ram = SystemMemory::read().total; // in bytes
 
         const HARD_CAP: usize = 10 * 1024 * 1024 * 1024; // 10GB
         let soft_cap = ((system_ram as f64) * 0.8) as usize;
@@ -115,14 +113,11 @@ impl BsaExtractCache {
 
     /// Create cache with a specific size limit (for testing)
     pub fn with_limit(max_bytes: usize) -> Self {
-        let mut sys = System::new_all();
-        sys.refresh_memory();
-
         Self {
             cache: HashMap::new(),
             current_size: AtomicUsize::new(0),
             max_size: max_bytes,
-            system_ram: sys.total_memory(),
+            system_ram: SystemMemory::read().total,
         }
     }
 
@@ -144,9 +139,7 @@ impl BsaExtractCache {
     /// Check current system memory pressure
     /// Returns true if we should flush cache (available RAM < 20% of total)
     pub fn memory_pressure(&self) -> bool {
-        let mut sys = System::new();
-        sys.refresh_memory();
-        let available = sys.available_memory();
+        let available = SystemMemory::read().available;
         let threshold = (self.system_ram as f64 * 0.2) as u64;
         available < threshold
     }

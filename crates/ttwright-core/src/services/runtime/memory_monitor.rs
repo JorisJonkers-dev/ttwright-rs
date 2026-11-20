@@ -1,8 +1,8 @@
+use super::system_memory::SystemMemory;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
-use sysinfo::System;
 use tracing::{info, warn};
 
 /// Lightweight background RAM monitor that tracks process memory usage.
@@ -98,16 +98,15 @@ impl MemoryMonitor {
         // Final sample might be highest
         let peak = peak.max(final_rss);
 
-        let mut sys = System::new();
-        sys.refresh_memory();
+        let system = SystemMemory::read();
 
         let report = MemoryReport {
             initial_rss_mb: self.initial_rss_bytes as f64 / 1024.0 / 1024.0,
             peak_rss_mb: peak as f64 / 1024.0 / 1024.0,
             final_rss_mb: final_rss as f64 / 1024.0 / 1024.0,
             delta_mb: (peak - self.initial_rss_bytes) as f64 / 1024.0 / 1024.0,
-            system_total_mb: sys.total_memory() as f64 / 1024.0 / 1024.0,
-            system_available_mb: sys.available_memory() as f64 / 1024.0 / 1024.0,
+            system_total_mb: system.total as f64 / 1024.0 / 1024.0,
+            system_available_mb: system.available as f64 / 1024.0 / 1024.0,
             elapsed: self.start.elapsed(),
         };
 
@@ -143,9 +142,11 @@ fn get_rss_bytes() -> u64 {
     {
         use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
         let pid = Pid::from_u32(std::process::id());
-        let mut sys = System::new_with_specifics(
+        let Ok(mut sys) = System::new_with_specifics(
             RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing().with_memory()),
-        );
+        ) else {
+            return 0;
+        };
         sys.refresh_processes_specifics(
             sysinfo::ProcessesToUpdate::Some(&[pid]),
             true,
@@ -166,10 +167,8 @@ pub fn current_rss_mb() -> f64 {
 /// Print a one-line RAM status to stdout.
 pub fn print_ram_status(label: &str) {
     let rss = current_rss_mb();
-    let mut sys = System::new();
-    sys.refresh_memory();
-    let available_gb = sys.available_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
-    let total_gb = sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+    let system = SystemMemory::read();
+    let (available_gb, total_gb) = (system.available_gb(), system.total_gb());
     tracing::info!(
         "  [RAM] {}: Process {:.0} MB | System {:.1}/{:.1} GB available",
         label,
