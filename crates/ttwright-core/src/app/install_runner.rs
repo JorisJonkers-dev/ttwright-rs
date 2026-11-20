@@ -15,6 +15,7 @@ use crate::services::system_memory::SystemMemory;
 use crate::services::{
     AssetProcessor, FileVerifier, GameDetection, LocationResolver, ManifestLoader, MpiExtractor,
     MpiPathIndex, MpiStore, XdeltaManager, apply_file_attrs, compute_md5, compute_sha1,
+    files_written_by_journal,
 };
 
 /// What to install, from where, into where.
@@ -281,7 +282,15 @@ where
             "Running {} pre-installation checks...",
             checks.len()
         )));
-        let verification_result = FileVerifier::new(&resolver).run_checks(&checks)?;
+        // On resume, a "file must not exist" check passes for the files the interrupted run wrote.
+        let own_files = if report.resumed {
+            files_written_by_journal(&resolver, &assets, &journal, &request.destination_path)
+        } else {
+            Default::default()
+        };
+        let verification_result = FileVerifier::new(&resolver)
+            .with_own_files(own_files)
+            .run_checks(&checks)?;
         emit(InstallEvent::progress(
             Phase::Checks,
             (verification_result.passed + verification_result.failed) as u64,
@@ -289,18 +298,47 @@ where
             "",
         ));
         if !verification_result.is_success() {
+            // On resume, a file inside the destination that the journal does not explain is not the package's
+            // mistake of installing over a game folder: the folder holds files this install did not write.
+            let foreign: Vec<&crate::services::InvertedFailure> = if report.resumed {
+                verification_result
+                    .inverted_failures
+                    .iter()
+                    .filter(|f| f.path.starts_with(&request.destination_path))
+                    .collect()
+            } else {
+                Vec::new()
+            };
             for err in &verification_result.errors {
                 emit(InstallEvent::log(format!("CHECK FAILED: {}", err)));
-                report.note(err.clone());
+                if !foreign.iter().any(|f| &f.error == err) {
+                    report.note(err.clone());
+                }
             }
-            return Err(InstallError::new(
-                ErrorCode::CheckFailed,
+            for f in &foreign {
+                report.note(format!(
+                    "{} is in the destination, but this install did not write it",
+                    f.path.display()
+                ));
+            }
+            let message = if !foreign.is_empty() && foreign.len() == verification_result.failed {
+                format!(
+                    "Cannot resume: the destination {} holds files this install did not write ({}). \
+                     Use an empty folder, or remove those files and run again",
+                    request.destination_path.display(),
+                    foreign
+                        .iter()
+                        .map(|f| f.path.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            } else {
                 format!(
                     "Verification failed: {} checks failed. Please ensure you have valid, unmodified game files.",
                     verification_result.failed
-                ),
-            )
-            .into());
+                )
+            };
+            return Err(InstallError::new(ErrorCode::CheckFailed, message).into());
         }
         emit(InstallEvent::log(format!(
             "All {} checks passed",
