@@ -11,6 +11,7 @@ use crate::app::{
     CancelToken, GameNeeds, InstallError, InstallEvent, Journal, check_manifest, classify,
 };
 use crate::models::{Check, InstallConfig};
+use crate::services::system_memory::SystemMemory;
 use crate::services::{
     AssetProcessor, FileVerifier, GameDetection, LocationResolver, ManifestLoader, MpiExtractor,
     MpiPathIndex, MpiStore, XdeltaManager, apply_file_attrs, compute_md5, compute_sha1,
@@ -733,9 +734,7 @@ where
     F: Fn(InstallEvent) + Sync,
 {
     if MpiExtractor::is_mpi_file(&request.mpi_path) {
-        let mut sys = sysinfo::System::new();
-        sys.refresh_memory();
-        let available_gb = sys.available_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+        let available_gb = SystemMemory::read().available_gb();
         let use_inmemory = available_gb >= 10.0;
         let extract_dir = mpi_work_dir(request);
 
