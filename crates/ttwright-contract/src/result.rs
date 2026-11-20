@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Result v1: what `ttwright install --json` prints on stdout at the end, also when it failed or was cancelled.
+//!
+//! Version note: `redirected` and `redirected_total` (files the manifest meant for a place outside the destination,
+//! put under `_ttwright_game_root/` instead) were added to v1 as optional members with defaults. That is not a new
+//! version (see the crate docs): a reader of v1 that does not know them ignores them.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -71,6 +75,35 @@ pub struct ErrorInfo {
     pub feature: Option<String>,
 }
 
+/// The step of a package that was redirected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RedirectedStep {
+    /// An asset operation (copy, new, patch, audio).
+    Asset,
+    /// A post-installation command (delete, rename) or a file time.
+    PostInstall,
+}
+
+/// A file the manifest meant for a place outside the destination, put under `_ttwright_game_root/` in the
+/// destination instead. ttwright never writes outside the destination, whatever the manifest says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RedirectedFile {
+    /// What kind of step it was.
+    pub step: RedirectedStep,
+    /// The manifest's name of the location it was meant for, for example `FNV Root`.
+    pub location: String,
+    /// The path the manifest meant, as it resolved on this machine.
+    pub target: String,
+    /// Where it went, relative to `output_dir`, with `/` as separator.
+    pub written_to: String,
+}
+
+/// The folder in the destination that takes the files meant for a place outside it.
+pub const REDIRECT_DIR: &str = "_ttwright_game_root";
+/// The most redirected files a result lists; `redirected_total` counts all of them.
+pub const REDIRECTED_LISTED: usize = 100;
+
 /// Result v1.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ResultDoc {
@@ -112,6 +145,13 @@ pub struct ResultDoc {
     /// Set unless the status is `success`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorInfo>,
+    /// Files the manifest meant for a place outside the destination (a game folder), put under
+    /// `_ttwright_game_root/` in the destination instead; at most 100 are listed. Reported by a dry run too.
+    #[serde(default)]
+    pub redirected: Vec<RedirectedFile>,
+    /// How many files were redirected, also those past the 100 listed.
+    #[serde(default)]
+    pub redirected_total: u64,
     /// Up to twenty lines on what went wrong in detail (a failed asset, a failed check).
     #[serde(default)]
     pub messages: Vec<String>,
@@ -138,6 +178,8 @@ impl ResultDoc {
             elapsed_ms: 0,
             log_file: None,
             error: None,
+            redirected: Vec::new(),
+            redirected_total: 0,
             messages: Vec::new(),
         }
     }

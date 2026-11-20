@@ -206,6 +206,8 @@ fn result_document(job: &InstallJob, outcome: &InstallOutcome) -> ResultDoc {
     doc.archives = report.archives;
     doc.post_install = report.post_install;
     doc.resumed = report.resumed;
+    doc.redirected = report.redirected.clone();
+    doc.redirected_total = report.redirected_total;
     doc.dry_run = job.dry_run;
     doc.elapsed_ms = u64::try_from(report.elapsed.as_millis()).unwrap_or(u64::MAX);
     for message in &report.messages {
