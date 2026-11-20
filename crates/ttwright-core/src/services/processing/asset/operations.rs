@@ -113,7 +113,7 @@ impl AssetProcessor {
         }
 
         // Create audio processor with manifest params (e.g. "-f:24000 -q:5")
-        let audio_processor = AudioProcessor::new().with_params(&asset.params);
+        let audio_processor = AudioProcessor::new().with_params(&asset.params)?;
         let processed = audio_processor.process_ogg_resample(&source_data)?;
         self.write_to_target(asset, &processed)?;
         Ok(())
@@ -136,7 +136,7 @@ impl AssetProcessor {
         }
 
         // Create audio processor with manifest params (e.g. "-f:24000 -q:5")
-        let audio_processor = AudioProcessor::new().with_params(&asset.params);
+        let audio_processor = AudioProcessor::new().with_params(&asset.params)?;
         let processed =
             audio_processor.process_audio_conversion(&source_data, input_format, output_format)?;
         self.write_to_target(asset, &processed)?;
@@ -291,7 +291,7 @@ impl AssetProcessor {
             }
             OpType::OggEnc2 => {
                 if !self.dry_run {
-                    let audio_processor = AudioProcessor::new().with_params(&asset.params);
+                    let audio_processor = AudioProcessor::new().with_params(&asset.params)?;
                     let processed = audio_processor.process_ogg_resample(source_data)?;
                     self.write_to_target(asset, &processed)?;
                 }
@@ -304,7 +304,7 @@ impl AssetProcessor {
                     .and_then(|e| e.to_str());
 
                 if !self.dry_run {
-                    let audio_processor = AudioProcessor::new().with_params(&asset.params);
+                    let audio_processor = AudioProcessor::new().with_params(&asset.params)?;
                     let processed = audio_processor.process_audio_conversion(
                         source_data,
                         input_format,

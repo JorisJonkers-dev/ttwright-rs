@@ -11,7 +11,7 @@ use ttwright_contract::{ErrorCode, is_supported};
 
 use crate::app::InstallError;
 use crate::models::{Asset, TtwManifest};
-use crate::services::AudioFormat;
+use crate::services::{AudioFormat, AudioProcessor};
 
 /// The game copies a manifest needs, from the variables its locations use.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -216,59 +216,92 @@ pub fn check_manifest(
             for token in asset.params.split_whitespace() {
                 let key = token.split(':').next().unwrap_or(token);
                 known("audio_param", key, "the audio parameter")?;
+                if asset.op_type == 4 && !matches!(key, "-f" | "-q") {
+                    return Err(unsupported(
+                        format!("audio_param:{key}"),
+                        "the audio parameter, which the Ogg resample operation does not take,",
+                    ));
+                }
             }
-        }
-        if asset.op_type == 5 {
-            let target = asset.effective_target_path();
-            let ext = Path::new(&target.replace('\\', "/"))
-                .extension()
-                .map(|e| e.to_string_lossy().to_ascii_lowercase())
-                .unwrap_or_default();
-            if AudioFormat::from_extension(&ext).is_none() {
-                return Err(unsupported(
-                    format!("audio_format:{ext}"),
-                    "the audio format",
-                ));
+            let processor = AudioProcessor::new()
+                .with_params(&asset.params)
+                .map_err(|e| {
+                    InstallError::unsupported(
+                        format!("audio_param:{}", e.token),
+                        format!("The manifest uses an audio parameter this ttwright refuses: {e}"),
+                    )
+                })?;
+            if asset.op_type == 5 {
+                let target = asset.effective_target_path();
+                let ext = Path::new(&target.replace('\\', "/"))
+                    .extension()
+                    .map(|e| e.to_string_lossy().to_ascii_lowercase())
+                    .unwrap_or_default();
+                let Some(format) = AudioFormat::from_extension(&ext) else {
+                    return Err(unsupported(
+                        format!("audio_format:{ext}"),
+                        "the audio format",
+                    ));
+                };
+                processor.check_output(format).map_err(|e| {
+                    InstallError::unsupported(
+                        format!("audio_param:asset-{}", asset.index),
+                        format!("Asset {} cannot be written as asked: {e}", asset.index),
+                    )
+                })?;
             }
         }
     }
 
     // Variables: every token a location uses must resolve to a game copy, the destination or a string variable.
-    let mut needs = GameNeeds::default();
-    let mut seen = BTreeSet::new();
-    let mut pending: Vec<String> = locations
+    // A location that no asset and no check reads may name a personal-folder variable (types 1 and 2): nothing
+    // would resolve it, so it is not refused (the 3.4 package has such a location for the game's documents folder).
+    let used: BTreeSet<usize> = assets
         .iter()
-        .flat_map(|l| variable_tokens(l.value.as_deref().unwrap_or_default()))
+        .flat_map(|a| [a.source_loc, a.target_loc])
+        .chain(manifest.checks.iter().flatten().map(|c| c.loc))
+        .filter_map(|i| usize::try_from(i).ok())
         .collect();
-    while let Some(token) = pending.pop() {
-        if !seen.insert(token.clone()) {
-            continue;
-        }
-        if let Some((_, game)) = BUILTIN.iter().find(|(name, _)| *name == token) {
-            match game {
-                Some(Game::Fallout3) => needs.fallout3 = true,
-                Some(Game::FalloutNv) => needs.falloutnv = true,
-                Some(Game::Oblivion) => needs.oblivion = true,
-                None => {}
+    let mut needs = GameNeeds::default();
+    for lenient in [false, true] {
+        let mut seen = BTreeSet::new();
+        let mut pending: Vec<String> = locations
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| used.contains(i) != lenient)
+            .flat_map(|(_, l)| variable_tokens(l.value.as_deref().unwrap_or_default()))
+            .collect();
+        while let Some(token) = pending.pop() {
+            if !seen.insert(token.clone()) {
+                continue;
             }
-            continue;
-        }
-        let defined = variables.iter().find(|v| {
-            v.name
-                .as_deref()
-                .is_some_and(|n| n.eq_ignore_ascii_case(&token))
-        });
-        match defined {
-            Some(v) if v.var_type == 0 && v.value.is_some() => {
-                pending.extend(variable_tokens(v.value.as_deref().unwrap_or_default()));
+            if let Some((_, game)) = BUILTIN.iter().find(|(name, _)| *name == token) {
+                match game {
+                    Some(Game::Fallout3) => needs.fallout3 = true,
+                    Some(Game::FalloutNv) => needs.falloutnv = true,
+                    Some(Game::Oblivion) => needs.oblivion = true,
+                    None => {}
+                }
+                continue;
             }
-            Some(v) if v.var_type != 0 && v.var_type != 4 => {
-                return Err(unsupported(
-                    format!("variable_type:{}", v.var_type),
-                    "the variable type",
-                ));
+            let defined = variables.iter().find(|v| {
+                v.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(&token))
+            });
+            match defined {
+                Some(v) if v.var_type == 0 && v.value.is_some() => {
+                    pending.extend(variable_tokens(v.value.as_deref().unwrap_or_default()));
+                }
+                Some(v) if lenient && matches!(v.var_type, 1 | 2) => {}
+                Some(v) if v.var_type != 0 && v.var_type != 4 => {
+                    return Err(unsupported(
+                        format!("variable_type:{}", v.var_type),
+                        "the variable type",
+                    ));
+                }
+                _ => return Err(unsupported(format!("variable:%{token}%"), "the variable")),
             }
-            _ => return Err(unsupported(format!("variable:%{token}%"), "the variable")),
         }
     }
     Ok(needs)
@@ -377,6 +410,34 @@ mod tests {
     }
 
     #[test]
+    fn the_ttw_radio_parameters_and_a_personal_folder_location_are_accepted() {
+        let mut m = base();
+        m.variable("USERPROFILE", 2, None);
+        m.variable("GAMEINI", 0, Some("%USERPROFILE%\\My Games"));
+        m.location("Documents", 0, "%GAMEINI%");
+        m.asset(5, "-c:2 -fmt:mp3 -b:192", 0, 1, "a.mp3", None);
+        m.asset(5, "", 0, 1, "b.wav", Some("b.wav"));
+        m.asset(5, "-f:24000 -q:5", 0, 1, "c.wav", Some("c.wav"));
+        assert!(run(&m).is_ok());
+    }
+
+    #[test]
+    fn audio_parameter_values_that_cannot_be_honoured_are_refused() {
+        for (params, target, expect) in [
+            ("-b:100", "a.mp3", "audio_param:-b:100"),
+            ("-c:6", "a.mp3", "audio_param:-c:6"),
+            ("-fmt:flac", "a.mp3", "audio_param:-fmt:flac"),
+            ("-z:1", "a.mp3", "audio_param:-z"),
+            ("-fmt:ogg", "a.mp3", "audio_param:asset-2"),
+            ("-b:192", "a.wav", "audio_param:asset-2"),
+        ] {
+            let mut m = base();
+            m.asset(5, params, 0, 1, "a.wav", Some(target));
+            assert_eq!(feature(&m), expect, "{params} -> {target}");
+        }
+    }
+
+    #[test]
     fn variables_must_resolve() {
         let mut m = base();
         m.location("Odd", 0, "%NOWHERE%\\x");
@@ -387,7 +448,9 @@ mod tests {
             run(&m).is_ok(),
             "an unused personal-folder variable is fine"
         );
-        m.location("Docs", 0, "%DOCS%\\My Games");
+        let docs = m.location("Docs", 0, "%DOCS%\\My Games");
+        assert!(run(&m).is_ok(), "a location nothing reads may name one");
+        m.asset(0, "", 0, docs, "a.txt", None);
         assert_eq!(feature(&m), "variable_type:1");
         let mut m = base();
         m.variable("GAMEKEY", 4, Some("HKLM\\x"));

@@ -86,7 +86,7 @@ Without `--json`, game copies you leave out are looked for in Steam libraries (`
 | 3 | `unsupported` | `unsupported_feature` or `unsupported_version`; nothing was written |
 | 4 | `cancelled` | cancelled; `--resume` continues |
 
-The error codes are stable: `usage`, `mpi_not_found`, `mpi_invalid`, `manifest_missing`, `manifest_invalid`,
+The error codes are stable: `usage`, `mpi_not_found`, `mpi_invalid`, `not_a_package`, `manifest_missing`, `manifest_invalid`,
 `unsupported_feature`, `unsupported_version`, `game_path_missing`, `game_not_found`, `check_failed`,
 `asset_failed`, `archive_failed`, `post_command_failed`, `resume_mismatch`, `cancelled`, `io`, `internal`.
 
