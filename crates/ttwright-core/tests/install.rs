@@ -427,7 +427,7 @@ fn a_first_run_into_a_folder_holding_the_file_is_still_refused() {
     std::fs::write(f.dest.join("meshes/a.nif"), b"somebody else's").unwrap();
     let (outcome, _) = install(request(&f));
     assert_eq!(code(&outcome).0, ErrorCode::CheckFailed);
-    assert!(outcome.report.notes.iter().any(|n| n.contains("a.nif")));
+    assert!(outcome.report.messages.iter().any(|n| n.contains("a.nif")));
 
     // --resume without a journal of this install explains nothing either.
     let mut req = request(&f);
@@ -472,7 +472,7 @@ fn a_resume_refuses_a_file_the_journal_does_not_explain_in_ttwrights_words() {
     assert!(
         outcome
             .report
-            .notes
+            .messages
             .iter()
             .all(|n| !n.contains("mod manager"))
     );
