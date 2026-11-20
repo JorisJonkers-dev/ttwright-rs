@@ -1,10 +1,12 @@
 use anyhow::{Context, Result, bail};
 use md5::Md5;
 use sha1::{Digest, Sha1};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::models::Check;
+use crate::app::Journal;
+use crate::models::{Asset, Check};
 use crate::services::LocationResolver;
 use crate::services::path_utils::safe_join;
 
@@ -46,6 +48,60 @@ pub struct VerificationResult {
     pub failed: usize,
     pub skipped: usize,
     pub errors: Vec<String>,
+    /// The "file must not exist" checks that failed, each with the file that exists.
+    pub inverted_failures: Vec<InvertedFailure>,
+}
+
+/// A "file must not exist" check that failed.
+#[derive(Debug, Clone)]
+pub struct InvertedFailure {
+    /// The file that exists.
+    pub path: PathBuf,
+    /// The error as recorded in [`VerificationResult::errors`].
+    pub error: String,
+}
+
+/// The key under which a path is compared with the files an install wrote: separators and case are ignored, as
+/// the manifest's paths are written for Windows.
+fn path_key(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+/// The files inside `destination` that an earlier run of this install wrote, from what the resume `journal` says
+/// is done: the loose files of finished assets and the archives that were written whole.
+pub fn files_written_by_journal(
+    resolver: &LocationResolver,
+    assets: &[Asset],
+    journal: &Journal,
+    destination: &Path,
+) -> HashSet<String> {
+    let destination = path_key(destination);
+    let mut written = HashSet::new();
+    for asset in assets {
+        let path = if resolver.is_bsa_creation_location(asset.target_loc) {
+            if !journal.archive_done(asset.target_loc) {
+                continue;
+            }
+            resolver.resolve_path(asset.target_loc).ok()
+        } else {
+            if !journal.asset_done(asset.index) {
+                continue;
+            }
+            let file = asset.target_path.as_deref().unwrap_or(&asset.source_path);
+            // `place` follows the redirect of a location outside the destination, as the install did.
+            resolver
+                .place(asset.target_loc, &file.replace('\\', "/"))
+                .ok()
+                .map(|placed| placed.path)
+        };
+        if let Some(path) = path {
+            let key = path_key(&path);
+            if key.starts_with(&format!("{}/", destination.trim_end_matches('/'))) {
+                written.insert(key);
+            }
+        }
+    }
+    written
 }
 
 impl VerificationResult {
@@ -57,11 +113,22 @@ impl VerificationResult {
 /// File verification service for checking game files before installation
 pub struct FileVerifier<'a> {
     resolver: &'a LocationResolver,
+    own_files: HashSet<String>,
 }
 
 impl<'a> FileVerifier<'a> {
     pub fn new(resolver: &'a LocationResolver) -> Self {
-        Self { resolver }
+        Self {
+            resolver,
+            own_files: HashSet::new(),
+        }
+    }
+
+    /// Files this install wrote itself (see [`files_written_by_journal`]): a "file must not exist" check passes
+    /// for them.
+    pub fn with_own_files(mut self, own_files: HashSet<String>) -> Self {
+        self.own_files = own_files;
+        self
     }
 
     /// Resolve the path that a manifest check will read.
@@ -76,6 +143,7 @@ impl<'a> FileVerifier<'a> {
             failed: 0,
             skipped: 0,
             errors: Vec::new(),
+            inverted_failures: Vec::new(),
         };
 
         if checks.is_empty() {
@@ -149,6 +217,15 @@ impl<'a> FileVerifier<'a> {
         };
 
         let exists = file_path.exists();
+        if check.inverted && exists && self.own_files.contains(&path_key(&file_path)) {
+            tracing::info!(
+                "  [{}] PASS: FileExists - {} was written by the install being resumed",
+                index + 1,
+                file_path.display()
+            );
+            result.passed += 1;
+            return;
+        }
         let expected = !check.inverted; // inverted means file should NOT exist
 
         if exists == expected {
@@ -165,13 +242,20 @@ impl<'a> FileVerifier<'a> {
                 format!("File not found: {}", file_path.display())
             };
 
-            if let Some(custom_msg) = &check.custom_message {
+            let error = if let Some(custom_msg) = &check.custom_message {
                 tracing::info!("  [{}] FAIL: {} - {}", index + 1, custom_msg, msg);
-                result.errors.push(format!("{}: {}", custom_msg, msg));
+                format!("{}: {}", custom_msg, msg)
             } else {
                 tracing::info!("  [{}] FAIL: FileExists - {}", index + 1, msg);
-                result.errors.push(msg);
+                msg
+            };
+            if check.inverted {
+                result.inverted_failures.push(InvertedFailure {
+                    path: file_path.clone(),
+                    error: error.clone(),
+                });
             }
+            result.errors.push(error);
             result.failed += 1;
         }
     }

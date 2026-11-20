@@ -1,6 +1,6 @@
+use crate::services::system_memory::SystemMemory;
 use std::fs;
 use std::path::{Path, PathBuf};
-use sysinfo::System;
 use tracing::info;
 
 /// Get number of chunks based on available RAM.
@@ -8,9 +8,7 @@ use tracing::info;
 /// Streaming BSA builders write to disk instead of holding all files in RAM, so
 /// chunking can be more aggressive than the original all-in-memory flow.
 pub(super) fn get_chunk_count_for_ram() -> usize {
-    let mut sys = System::new_all();
-    sys.refresh_memory();
-    let available_gb = sys.available_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+    let available_gb = SystemMemory::read().available_gb();
 
     let chunks = if available_gb >= 6.0 {
         1
