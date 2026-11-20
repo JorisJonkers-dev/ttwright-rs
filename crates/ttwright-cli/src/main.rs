@@ -323,6 +323,30 @@ fn print_summary(doc: &ResultDoc) {
         "Assets: {} done, {} failed, {} kept from the earlier run, of {}",
         doc.assets.done, doc.assets.failed, doc.assets.resumed, doc.assets.total
     );
+    if doc.redirected_total > 0 {
+        println!(
+            "{}",
+            ttwright_core::app::redirect_summary(doc.redirected_total as usize)
+        );
+        println!("Reason: ttwright never writes outside the destination.");
+        for file in &doc.redirected {
+            println!(
+                "  {} ({}) meant for {} -> {}",
+                file.location,
+                match file.step {
+                    ttwright_contract::RedirectedStep::Asset => "file",
+                    ttwright_contract::RedirectedStep::PostInstall => "post-install step",
+                },
+                file.target,
+                file.written_to
+            );
+        }
+        let more =
+            doc.redirected_total as usize - doc.redirected.len().min(doc.redirected_total as usize);
+        if more > 0 {
+            println!("  ... and {more} more");
+        }
+    }
     println!("Total time: {}m {}s", seconds / 60, seconds % 60);
     if let Some(log) = &doc.log_file {
         println!("Log saved to: {log}");

@@ -1,7 +1,18 @@
 use crate::models::{InstallConfig, Location, Variable};
-use anyhow::{Result, bail};
+use crate::services::runtime::Containment;
+use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
+use ttwright_contract::{REDIRECT_DIR, RedirectedFile, RedirectedStep};
+
+/// Where a file of a location is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Placed {
+    /// The path to write.
+    pub path: PathBuf,
+    /// Set when the location is outside the destination: the location's name and the path the manifest meant.
+    pub redirected_from: Option<(String, PathBuf)>,
+}
 
 /// Resolves location indices to actual file paths
 pub struct LocationResolver {
@@ -9,11 +20,14 @@ pub struct LocationResolver {
     config: InstallConfig,
     /// Variables read from manifest, keyed by name
     variables: HashMap<String, String>,
+    /// Everything written must stay inside the destination.
+    containment: Containment,
 }
 
 impl LocationResolver {
     pub fn new(locations: Vec<Location>, config: InstallConfig) -> Self {
         Self {
+            containment: Containment::new(Path::new(&config.destination_path)),
             locations,
             config,
             variables: HashMap::new(),
@@ -150,6 +164,65 @@ impl LocationResolver {
         }
     }
 
+    /// The containment of the destination: the last check before anything is written, deleted or renamed.
+    pub fn containment(&self) -> &Containment {
+        &self.containment
+    }
+
+    /// Where a file of `location_index` (a directory location) is written, `relative` being the manifest's path
+    /// below the location. A location outside the destination (a game folder) is redirected into
+    /// `<destination>/_ttwright_game_root/`: below the game folder it names, when it names one (`Data` for the
+    /// game's `Data` folder, nothing for its root), else below a folder named after the location.
+    ///
+    /// # Errors
+    /// When the location or the relative path is invalid.
+    pub fn place(&self, location_index: i32, relative: &str) -> Result<Placed> {
+        let dir = self.get_directory_path(location_index)?;
+        if self.containment.contains(&dir) {
+            return Ok(Placed {
+                path: crate::services::path_utils::safe_join(&dir, relative)?,
+                redirected_from: None,
+            });
+        }
+        let name = self
+            .get_location(location_index)?
+            .name
+            .clone()
+            .unwrap_or_default();
+        let below = self
+            .below_game_root(&dir)
+            .unwrap_or_else(|| PathBuf::from(sanitise_folder_name(&name)));
+        let redirected_dir = Path::new(&self.config.destination_path)
+            .join(REDIRECT_DIR)
+            .join(below);
+        let path = crate::services::path_utils::safe_join(&redirected_dir, relative)
+            .with_context(|| format!("location {name}"))?;
+        let meant = crate::services::path_utils::safe_join(&dir, relative)?;
+        Ok(Placed {
+            path,
+            redirected_from: Some((name, meant)),
+        })
+    }
+
+    /// `dir` below the game folder it is in, when it is in one (an empty path for the game folder itself).
+    fn below_game_root(&self, dir: &Path) -> Option<PathBuf> {
+        let dir = lexical(dir);
+        [
+            &self.config.falloutnv_root,
+            &self.config.fallout3_root,
+            &self.config.oblivion_root,
+        ]
+        .into_iter()
+        .filter(|root| !root.is_empty())
+        .filter_map(|root| {
+            let root = lexical(Path::new(root));
+            let rest = dir.strip_prefix(&root).ok()?;
+            Some((root.components().count(), rest.to_path_buf()))
+        })
+        .max_by_key(|(depth, _)| *depth)
+        .map(|(_, rest)| rest)
+    }
+
     /// Resolve variables in a path string
     fn resolve_variables(&self, path: &str) -> String {
         let mut resolved = path.to_string();
@@ -244,6 +317,63 @@ impl LocationResolver {
                 resolved.display()
             );
         }
+    }
+}
+
+/// A [`RedirectedFile`] for the file meant at `meant` and written at `written` (inside `destination`).
+pub fn redirected_file(
+    step: RedirectedStep,
+    location: String,
+    meant: &Path,
+    written: &Path,
+    destination: &Path,
+) -> RedirectedFile {
+    let relative = written.strip_prefix(destination).unwrap_or(written);
+    let written_to = relative
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/");
+    RedirectedFile {
+        step,
+        location,
+        target: meant.display().to_string(),
+        written_to,
+    }
+}
+
+/// The path without `.` and `..`, resolved by text only.
+fn lexical(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// A location's name as a single folder name: letters, digits, `-`, `_` and `.` stay, anything else becomes `_`.
+fn sanitise_folder_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim_matches('_');
+    if trimmed.is_empty() {
+        "location".to_owned()
+    } else {
+        trimmed.to_owned()
     }
 }
 

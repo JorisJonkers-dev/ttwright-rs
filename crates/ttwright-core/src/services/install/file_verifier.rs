@@ -88,10 +88,11 @@ pub fn files_written_by_journal(
                 continue;
             }
             let file = asset.target_path.as_deref().unwrap_or(&asset.source_path);
+            // `place` follows the redirect of a location outside the destination, as the install did.
             resolver
-                .get_directory_path(asset.target_loc)
+                .place(asset.target_loc, &file.replace('\\', "/"))
                 .ok()
-                .and_then(|dir| safe_join(&dir, file).ok())
+                .map(|placed| placed.path)
         };
         if let Some(path) = path {
             let key = path_key(&path);
