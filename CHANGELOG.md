@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.4.3...v0.4.4) (2026-11-20)
+
+
+### Bug Fixes
+
+* **deps:** update minor and patch dependencies ([#43](https://github.com/JorisJonkers-dev/ttwright-rs/issues/43)) ([8e4dc33](https://github.com/JorisJonkers-dev/ttwright-rs/commit/8e4dc33b0d71ae99f50dcba62f6ccb197c413482))
+
 ## [0.4.3](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.4.2...v0.4.3) (2026-11-18)
 
 
