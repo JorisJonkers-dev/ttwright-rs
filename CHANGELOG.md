@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.4.4...v0.5.0) (2026-11-20)
+
+
+### Features
+
+* **deps:** port audio decoding to symphonia 0.6 ([#47](https://github.com/JorisJonkers-dev/ttwright-rs/issues/47)) ([10529cc](https://github.com/JorisJonkers-dev/ttwright-rs/commit/10529cce72fbbd7bb0d46ccbcda34ae2572f06a7))
+* **deps:** port the memory probe to sysinfo 0.40 ([#49](https://github.com/JorisJonkers-dev/ttwright-rs/issues/49)) ([294d1d4](https://github.com/JorisJonkers-dev/ttwright-rs/commit/294d1d46b240505fe03782e5c1c6ecd2ff90672d))
+
+
+### Bug Fixes
+
+* **audio:** encode mono MP3 from mono samples ([#61](https://github.com/JorisJonkers-dev/ttwright-rs/issues/61)) ([8164eff](https://github.com/JorisJonkers-dev/ttwright-rs/commit/8164eff80a82867c40cec9505c12622aaac64fac))
+* **audio:** honour -c, -fmt and -b, refuse unknown audio parameters, name non-package files ([#54](https://github.com/JorisJonkers-dev/ttwright-rs/issues/54)) ([8fe04cf](https://github.com/JorisJonkers-dev/ttwright-rs/commit/8fe04cffd49fa044285c189310044b2fa5ff002d))
+* **install:** let a resume pass the must-not-exist check for files it wrote itself ([#57](https://github.com/JorisJonkers-dev/ttwright-rs/issues/57)) ([6227954](https://github.com/JorisJonkers-dev/ttwright-rs/commit/6227954a4dfa3df850cd2b2209d8e90139688838))
+* **install:** never write outside the destination ([#60](https://github.com/JorisJonkers-dev/ttwright-rs/issues/60)) ([c752a9a](https://github.com/JorisJonkers-dev/ttwright-rs/commit/c752a9a11072b87c22a809e8daa487bae1495ab8)), closes [#55](https://github.com/JorisJonkers-dev/ttwright-rs/issues/55)
+
 ## [0.4.4](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.4.3...v0.4.4) (2026-11-20)
 
 
