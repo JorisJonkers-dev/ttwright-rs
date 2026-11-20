@@ -1459,7 +1459,7 @@ dependencies = [
 
 [[package]]
 name = "ttwright-contract"
-version = "0.4.4"
+version = "0.5.0"
 dependencies = [
  "schemars",
  "serde",
@@ -1468,7 +1468,7 @@ dependencies = [
 
 [[package]]
 name = "ttwright-core"
-version = "0.4.4"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "ba2",
