@@ -87,13 +87,15 @@ impl InstallConfig {
         }
 
         let mpi_path = Path::new(&self.mpi_package_path);
-        let is_mpi_file = mpi_path.is_file()
-            && mpi_path
-                .extension()
-                .map(|e| e.eq_ignore_ascii_case("mpi"))
-                .unwrap_or(false);
+        let is_mpi_file = crate::services::MpiExtractor::is_mpi_file(mpi_path);
         let is_directory = mpi_path.is_dir();
 
+        if !is_mpi_file
+            && !is_directory
+            && let Some(message) = crate::services::MpiExtractor::not_a_package_message(mpi_path)
+        {
+            bail!("{message}");
+        }
         if !is_mpi_file && !is_directory {
             bail!("MPI package not found: {}", self.mpi_package_path);
         }

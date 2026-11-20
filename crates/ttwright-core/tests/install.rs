@@ -353,3 +353,41 @@ fn resuming_another_package_is_refused() {
     req.resume = true;
     assert_eq!(code(&install(req).0).0, ErrorCode::ResumeMismatch);
 }
+
+#[test]
+fn a_7z_archive_is_named_as_one_and_not_reported_missing() {
+    let f = Fixture::new("sevenz");
+    let archive = f.dir.join("download.7z");
+    ttwright_testkit::write(&archive, &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0, 4, 0, 0]);
+    let mut req = request(&f);
+    req.mpi_path = archive;
+    let outcome = install(req).0;
+    let error = outcome.error.as_ref().unwrap();
+    let (code, message) = (error.code, error.message.clone());
+    assert_eq!(code, ErrorCode::NotAPackage);
+    assert!(
+        message.contains("7-Zip") && message.contains("extract"),
+        "{message}"
+    );
+}
+
+#[test]
+fn another_existing_file_is_not_reported_missing_either() {
+    let f = Fixture::new("notpkg");
+    let other = f.dir.join("readme.txt");
+    ttwright_testkit::write(&other, b"hello");
+    let mut req = request(&f);
+    req.mpi_path = other;
+    assert_eq!(code(&install(req).0).0, ErrorCode::NotAPackage);
+}
+
+#[test]
+fn a_package_header_under_another_extension_is_read_as_a_package() {
+    let f = Fixture::new("renamed");
+    let renamed = f.dir.join("package.bin");
+    ttwright_testkit::write(&renamed, b"BSA\0i\0\0\0 truncated");
+    let mut req = request(&f);
+    req.mpi_path = renamed;
+    // It is treated as a package (and fails as an unreadable one), not refused as a non-package.
+    assert_eq!(code(&install(req).0).0, ErrorCode::MpiInvalid);
+}

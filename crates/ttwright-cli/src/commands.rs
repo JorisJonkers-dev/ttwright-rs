@@ -13,6 +13,9 @@ pub(crate) fn run_extract(mpi_path: &Path, output: &Path) -> Result<()> {
     println!("=== TTW MPI Extractor ===\n");
 
     if !MpiExtractor::is_mpi_file(mpi_path) {
+        if let Some(message) = MpiExtractor::not_a_package_message(mpi_path) {
+            bail!("{message}");
+        }
         bail!("Not an MPI file: {}", mpi_path.display());
     }
 
@@ -43,6 +46,8 @@ pub(crate) fn run_inspect(mpi_path: &Path, verbose: bool) -> Result<()> {
         (extracted, true)
     } else if mpi_path.is_dir() {
         (mpi_path.to_path_buf(), false)
+    } else if let Some(message) = MpiExtractor::not_a_package_message(mpi_path) {
+        bail!("{message}");
     } else {
         bail!("Invalid MPI path: {}", mpi_path.display());
     };

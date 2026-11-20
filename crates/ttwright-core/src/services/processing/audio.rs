@@ -26,6 +26,68 @@ pub struct AudioProcessor {
     target_sample_rate: u32,
     /// OGG encoding quality (-0.1 to 1.0, default 0.5)
     ogg_quality: f32,
+    /// Requested output channel count (`-c:N`); `None` keeps the source's
+    channels: Option<usize>,
+    /// Output format the manifest declares (`-fmt:<format>`); checked against the target extension
+    declared_format: Option<AudioFormat>,
+    /// MP3 bit rate in kbit/s (`-b:N`, default 192)
+    mp3_bitrate: Mp3Bitrate,
+    /// Whether `-b` was given
+    bitrate_given: bool,
+}
+
+/// A manifest audio parameter this build refuses, with the token and the reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioParamError {
+    /// The offending token as written in the manifest, e.g. `-b:100`.
+    pub token: String,
+    /// Why it is refused.
+    pub reason: String,
+}
+
+impl std::fmt::Display for AudioParamError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "audio parameter `{}`: {}", self.token, self.reason)
+    }
+}
+
+impl std::error::Error for AudioParamError {}
+
+/// The MP3 bit rates LAME encodes at, in kbit/s. Any other value is refused, never rounded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Mp3Bitrate(u32);
+
+impl Mp3Bitrate {
+    const SUPPORTED: [u32; 16] = [
+        8, 16, 24, 32, 40, 48, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
+    ];
+
+    /// The bit rate in kbit/s.
+    pub fn kbps(self) -> u32 {
+        self.0
+    }
+
+    fn lame(self) -> mp3lame_encoder::Bitrate {
+        use mp3lame_encoder::Bitrate as B;
+        match self.0 {
+            8 => B::Kbps8,
+            16 => B::Kbps16,
+            24 => B::Kbps24,
+            32 => B::Kbps32,
+            40 => B::Kbps40,
+            48 => B::Kbps48,
+            64 => B::Kbps64,
+            80 => B::Kbps80,
+            96 => B::Kbps96,
+            112 => B::Kbps112,
+            128 => B::Kbps128,
+            160 => B::Kbps160,
+            224 => B::Kbps224,
+            256 => B::Kbps256,
+            320 => B::Kbps320,
+            _ => B::Kbps192,
+        }
+    }
 }
 
 impl AudioProcessor {
@@ -33,6 +95,10 @@ impl AudioProcessor {
         Self {
             target_sample_rate: 44100,
             ogg_quality: 0.5,
+            channels: None,
+            declared_format: None,
+            mp3_bitrate: Mp3Bitrate(192),
+            bitrate_given: false,
         }
     }
 
@@ -46,24 +112,121 @@ impl AudioProcessor {
         self
     }
 
-    /// Configure from MPI manifest params string (e.g. "-f:24000 -q:5")
-    /// -f:<hz> sets target sample rate, -q:<0-10> sets OGG quality (mapped to -0.1..1.0)
-    pub fn with_params(mut self, params: &str) -> Self {
+    /// Configure from MPI manifest params string (e.g. "-f:24000 -q:5" or "-c:2 -fmt:mp3 -b:192").
+    ///
+    /// - `-f:<hz>` target sample rate
+    /// - `-q:<0-10>` OGG quality (mapped to -0.1..1.0)
+    /// - `-c:<1|2>` output channel count (mono and stereo convert into each other)
+    /// - `-fmt:<ogg|wav|mp3>` the output format; must match the target extension
+    /// - `-b:<kbps>` MP3 bit rate, one of 8, 16, 24, 32, 40, 48, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320
+    ///
+    /// Any other token, or a value outside what is listed, is an error: nothing is ignored or rounded.
+    pub fn with_params(mut self, params: &str) -> Result<Self, AudioParamError> {
+        let bad = |token: &str, reason: &str| AudioParamError {
+            token: token.to_owned(),
+            reason: reason.to_owned(),
+        };
         for token in params.split_whitespace() {
-            if let Some(freq_str) = token.strip_prefix("-f:") {
-                if let Ok(freq) = freq_str.parse::<u32>()
-                    && freq > 0
-                {
-                    self.target_sample_rate = freq;
-                }
-            } else if let Some(q_str) = token.strip_prefix("-q:")
-                && let Ok(q) = q_str.parse::<f32>()
-            {
-                // OggEnc2 quality scale: 0-10 maps to vorbis -0.1 to 1.0
-                self.ogg_quality = (q / 10.0).clamp(-0.1, 1.0);
+            let (key, value) = token.split_once(':').unwrap_or((token, ""));
+            match key {
+                "-f" => match value.parse::<u32>() {
+                    Ok(freq) if freq > 0 => self.target_sample_rate = freq,
+                    _ => {
+                        return Err(bad(
+                            token,
+                            "the sample rate must be a positive number of Hz",
+                        ));
+                    }
+                },
+                "-q" => match value.parse::<f32>() {
+                    Ok(q) if q.is_finite() && (-1.0..=10.0).contains(&q) => {
+                        // OggEnc2 quality scale: 0-10 maps to vorbis -0.1 to 1.0
+                        self.ogg_quality = (q / 10.0).clamp(-0.1, 1.0);
+                    }
+                    _ => return Err(bad(token, "the quality must be a number from -1 to 10")),
+                },
+                "-c" => match value.parse::<usize>() {
+                    Ok(c @ (1 | 2)) => self.channels = Some(c),
+                    _ => {
+                        return Err(bad(
+                            token,
+                            "only 1 (mono) or 2 (stereo) channels are supported",
+                        ));
+                    }
+                },
+                "-fmt" => match AudioFormat::from_extension(value) {
+                    Some(format) => self.declared_format = Some(format),
+                    None => return Err(bad(token, "the format must be ogg, wav or mp3")),
+                },
+                "-b" => match value.parse::<u32>() {
+                    Ok(kbps) if Mp3Bitrate::SUPPORTED.contains(&kbps) => {
+                        self.mp3_bitrate = Mp3Bitrate(kbps);
+                        self.bitrate_given = true;
+                    }
+                    _ => {
+                        return Err(bad(
+                            token,
+                            "the bit rate must be one of 8, 16, 24, 32, 40, 48, 64, 80, 96, 112, 128, 160, 192, 224, 256 or 320 kbit/s",
+                        ));
+                    }
+                },
+                _ => return Err(bad(token, "this parameter is not implemented")),
             }
         }
-        self
+        Ok(self)
+    }
+
+    /// Refuse parameters that cannot apply to an output of `format`: a declared `-fmt` that is not it,
+    /// or a `-b` bit rate on anything but MP3.
+    pub fn check_output(&self, format: AudioFormat) -> Result<()> {
+        if let Some(declared) = self.declared_format
+            && declared != format
+        {
+            bail!(
+                "the manifest declares `-fmt:{}` but the target file is {}",
+                declared.name(),
+                format.name()
+            );
+        }
+        if self.bitrate_given && format != AudioFormat::Mp3 {
+            bail!(
+                "`-b` sets an MP3 bit rate, but the target file is {}",
+                format.name()
+            );
+        }
+        Ok(())
+    }
+
+    /// Refuse parameters the Ogg resample operation (op 4) cannot honour.
+    fn check_ogg_resample(&self) -> Result<()> {
+        if self.channels.is_some() || self.declared_format.is_some() || self.bitrate_given {
+            bail!("the Ogg resample operation only takes `-f` and `-q`");
+        }
+        Ok(())
+    }
+
+    /// Convert to the requested channel count (mono to stereo duplicates, stereo to mono averages).
+    fn remix(&self, mut audio: DecodedAudio) -> Result<DecodedAudio> {
+        let Some(target) = self.channels else {
+            return Ok(audio);
+        };
+        match (audio.channels, target) {
+            (from, to) if from == to => {}
+            (1, 2) => {
+                audio.samples = audio.samples.iter().flat_map(|&s| [s, s]).collect();
+                audio.channels = 2;
+            }
+            (2, 1) => {
+                audio.samples = audio
+                    .samples
+                    .chunks(2)
+                    .map(|f| f.iter().sum::<f32>() / f.len() as f32)
+                    .collect();
+                audio.channels = 1;
+            }
+            (from, to) => bail!("cannot convert {from}-channel audio to {to} channels"),
+        }
+        Ok(audio)
     }
 
     /// Decode an audio file to raw PCM samples
@@ -365,6 +528,7 @@ impl AudioProcessor {
     /// copy it through unchanged. Vorbis files do not expose the original
     /// encoder quality setting reliably, so quality cannot be safely compared.
     pub fn process_ogg_resample(&self, input_data: &[u8]) -> Result<Vec<u8>> {
+        self.check_ogg_resample()?;
         if self.can_copy_ogg_resample_input(input_data)? {
             return Ok(input_data.to_vec());
         }
@@ -474,9 +638,11 @@ impl AudioProcessor {
         input_format: Option<&str>,
         output_format: AudioFormat,
     ) -> Result<Vec<u8>> {
+        self.check_output(output_format)?;
         let decoded = self
             .decode_bytes(input_data, input_format)
             .context("Failed to decode audio")?;
+        let decoded = self.remix(decoded)?;
 
         match output_format {
             AudioFormat::Ogg => {
@@ -511,7 +677,7 @@ impl AudioProcessor {
             .set_quality(mp3lame_encoder::Quality::Best)
             .map_err(|e| anyhow::anyhow!("Failed to set quality: {:?}", e))?;
         builder
-            .set_brate(mp3lame_encoder::Bitrate::Kbps192)
+            .set_brate(self.mp3_bitrate.lame())
             .map_err(|e| anyhow::anyhow!("Failed to set bitrate: {:?}", e))?;
 
         let mut encoder = builder
@@ -611,12 +777,209 @@ pub enum AudioFormat {
 }
 
 impl AudioFormat {
+    /// The format's name as a manifest writes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Ogg => "ogg",
+            Self::Wav => "wav",
+            Self::Mp3 => "mp3",
+        }
+    }
+
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext.to_lowercase().as_str() {
             "ogg" => Some(Self::Ogg),
             "wav" => Some(Self::Wav),
             "mp3" => Some(Self::Mp3),
             _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+
+    /// A synthetic sine tone, `seconds` long, as a WAV file with `channels` channels.
+    fn sine_wav(channels: u16, rate: u32, seconds: f32) -> Vec<u8> {
+        let mut out = std::io::Cursor::new(Vec::new());
+        let spec = WavSpec {
+            channels,
+            sample_rate: rate,
+            bits_per_sample: 16,
+            sample_format: SampleFormat::Int,
+        };
+        let mut w = WavWriter::new(&mut out, spec).unwrap();
+        for i in 0..(rate as f32 * seconds) as usize {
+            let v =
+                ((i as f32 * 440.0 * std::f32::consts::TAU / rate as f32).sin() * 12000.0) as i16;
+            for _ in 0..channels {
+                w.write_sample(v).unwrap();
+            }
+        }
+        w.finalize().unwrap();
+        out.into_inner()
+    }
+
+    /// The (channels, kbit/s, sample rate) every MPEG-1 Layer III frame header in `mp3` claims; all frames must agree
+    /// on channels and rate. Skips an ID3v2 tag if present.
+    fn mp3_header(mp3: &[u8]) -> (usize, Vec<u32>, u32) {
+        const KBPS: [u32; 15] = [
+            0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
+        ];
+        const RATES: [u32; 3] = [44100, 48000, 32000];
+        let mut pos = 0;
+        let mut channels = None;
+        let mut rates = Vec::new();
+        let mut sample_rate = 0;
+        while pos + 4 <= mp3.len() {
+            let h = u32::from_be_bytes(mp3[pos..pos + 4].try_into().unwrap());
+            let layer3_v1 = h >> 21 == 0x7ff && (h >> 19) & 3 == 3 && (h >> 17) & 3 == 1;
+            let br = ((h >> 12) & 15) as usize;
+            let sr = ((h >> 10) & 3) as usize;
+            if !layer3_v1 || br == 0 || br == 15 || sr == 3 {
+                pos += 1;
+                continue;
+            }
+            let ch = if (h >> 6) & 3 == 3 { 1 } else { 2 };
+            assert_eq!(*channels.get_or_insert(ch), ch, "channel count changed");
+            sample_rate = RATES[sr];
+            rates.push(KBPS[br]);
+            pos += (144 * KBPS[br] * 1000 / RATES[sr] + ((h >> 9) & 1)) as usize;
+        }
+        (channels.expect("no MP3 frame found"), rates, sample_rate)
+    }
+
+    fn decode_mp3(mp3: &[u8]) -> DecodedAudio {
+        AudioProcessor::new()
+            .decode_bytes(mp3, Some("mp3"))
+            .unwrap()
+    }
+
+    fn to_mp3(params: &str, wav: &[u8]) -> Result<Vec<u8>> {
+        AudioProcessor::new()
+            .with_params(params)?
+            .process_audio_conversion(wav, Some("wav"), AudioFormat::Mp3)
+    }
+
+    #[test]
+    fn a_requested_bit_rate_is_the_bit_rate_produced() {
+        let wav = sine_wav(2, 44100, 2.0);
+        for kbps in [128u32, 192, 256] {
+            let mp3 = to_mp3(&format!("-b:{kbps}"), &wav).unwrap();
+            let (_, rates, _) = mp3_header(&mp3);
+            assert!(!rates.is_empty());
+            assert!(
+                rates.iter().all(|&r| r == kbps),
+                "asked {kbps}, frame headers say {:?}",
+                rates.iter().collect::<BTreeSet<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn the_bit_rate_is_192_when_none_is_asked() {
+        let (_, rates, _) = mp3_header(&to_mp3("", &sine_wav(2, 44100, 1.0)).unwrap());
+        assert!(rates.iter().all(|&r| r == 192));
+    }
+
+    #[test]
+    fn a_mono_source_asked_for_two_channels_comes_out_stereo() {
+        let mp3 = to_mp3("-c:2 -fmt:mp3 -b:192", &sine_wav(1, 44100, 1.0)).unwrap();
+        assert_eq!(mp3_header(&mp3).0, 2);
+        assert_eq!(decode_mp3(&mp3).channels, 2);
+    }
+
+    #[test]
+    fn a_stereo_source_asked_for_one_channel_comes_out_mono() {
+        let mp3 = to_mp3("-c:1", &sine_wav(2, 44100, 1.0)).unwrap();
+        assert_eq!(mp3_header(&mp3).0, 1);
+        assert_eq!(decode_mp3(&mp3).channels, 1);
+    }
+
+    #[test]
+    fn the_channel_count_is_kept_when_none_is_asked() {
+        assert_eq!(
+            mp3_header(&to_mp3("", &sine_wav(1, 44100, 1.0)).unwrap()).0,
+            1
+        );
+    }
+
+    #[test]
+    fn the_whole_ttw_radio_parameter_set_produces_stereo_192() {
+        let mp3 = to_mp3("-c:2 -fmt:mp3 -b:192", &sine_wav(1, 44100, 2.0)).unwrap();
+        let (channels, rates, rate) = mp3_header(&mp3);
+        assert_eq!((channels, rate), (2, 44100));
+        assert!(rates.iter().all(|&r| r == 192));
+        let decoded = decode_mp3(&mp3);
+        assert_eq!((decoded.channels, decoded.sample_rate), (2, 44100));
+        assert!(
+            decoded.samples.iter().any(|s| s.abs() > 0.1),
+            "the tone is audible"
+        );
+    }
+
+    #[test]
+    fn a_format_that_is_not_the_target_extension_is_an_error() {
+        let wav = sine_wav(2, 44100, 0.5);
+        let e = AudioProcessor::new()
+            .with_params("-fmt:ogg")
+            .unwrap()
+            .process_audio_conversion(&wav, Some("wav"), AudioFormat::Mp3)
+            .unwrap_err();
+        assert!(e.to_string().contains("-fmt:ogg"), "{e}");
+    }
+
+    #[test]
+    fn a_bit_rate_on_a_non_mp3_target_is_an_error() {
+        let e = AudioProcessor::new()
+            .with_params("-b:192")
+            .unwrap()
+            .process_audio_conversion(&sine_wav(2, 44100, 0.5), Some("wav"), AudioFormat::Wav)
+            .unwrap_err();
+        assert!(e.to_string().contains("MP3 bit rate"), "{e}");
+    }
+
+    #[test]
+    fn unsupported_values_and_unknown_tokens_are_named() {
+        for (params, token) in [
+            ("-b:100", "-b:100"),
+            ("-b:", "-b:"),
+            ("-c:6", "-c:6"),
+            ("-c:0", "-c:0"),
+            ("-fmt:flac", "-fmt:flac"),
+            ("-f:0", "-f:0"),
+            ("-q:abc", "-q:abc"),
+            ("-f:24000 -z:1", "-z:1"),
+            ("loose", "loose"),
+        ] {
+            let e = AudioProcessor::new().with_params(params).err().unwrap();
+            assert_eq!(e.token, token, "{params}");
+        }
+    }
+
+    #[test]
+    fn the_known_parameters_are_accepted_together() {
+        assert!(AudioProcessor::new().with_params("-f:24000 -q:5").is_ok());
+        assert!(
+            AudioProcessor::new()
+                .with_params("-c:2 -fmt:mp3 -b:192")
+                .is_ok()
+        );
+        assert!(AudioProcessor::new().with_params("").is_ok());
+    }
+
+    #[test]
+    fn channel_and_format_parameters_are_refused_by_the_ogg_resample() {
+        for params in ["-c:2", "-fmt:ogg", "-b:128"] {
+            let e = AudioProcessor::new()
+                .with_params(params)
+                .unwrap()
+                .process_ogg_resample(&[])
+                .unwrap_err();
+            assert!(e.to_string().contains("only takes"), "{params}: {e}");
         }
     }
 }
