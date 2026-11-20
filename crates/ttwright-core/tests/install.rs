@@ -391,3 +391,89 @@ fn a_package_header_under_another_extension_is_read_as_a_package() {
     // It is treated as a package (and fails as an unreadable one), not refused as a non-package.
     assert_eq!(code(&install(req).0).0, ErrorCode::MpiInvalid);
 }
+
+/// A fixture whose manifest also refuses an install where `file` already exists in the destination (the shape of
+/// the TTW package's "must not exist" check on `FalloutNV.esm`).
+fn fixture_refusing(label: &str, file: &str) -> Fixture {
+    let mut m = Fixture::manifest();
+    m.check(
+        json!({"Type": 0, "Inverted": true, "Loc": loc::DEST, "File": file,
+        "CustomMessage": "install using a mod manager into an empty folder"}),
+    );
+    Fixture::with_manifest(label, &m)
+}
+
+/// Run the install and cancel it once the directory assets are about to start: `meshes/a.nif` is written and
+/// journaled, the rest is not.
+fn interrupt(f: &Fixture) {
+    let cancel = CancelToken::new();
+    let mut req = request(f);
+    req.cancel = cancel.clone();
+    let outcome = run_install(req, |e| {
+        if let InstallEvent::Event(Event::Progress { message, .. }) = &e
+            && message.contains("directory assets")
+        {
+            cancel.cancel();
+        }
+    });
+    assert_eq!(code(&outcome).0, ErrorCode::Cancelled);
+    assert!(f.dest.join(JOURNAL_FILE).is_file());
+}
+
+#[test]
+fn a_first_run_into_a_folder_holding_the_file_is_still_refused() {
+    let f = fixture_refusing("inverted-first", "meshes/a.nif");
+    std::fs::create_dir_all(f.dest.join("meshes")).unwrap();
+    std::fs::write(f.dest.join("meshes/a.nif"), b"somebody else's").unwrap();
+    let (outcome, _) = install(request(&f));
+    assert_eq!(code(&outcome).0, ErrorCode::CheckFailed);
+    assert!(outcome.report.notes.iter().any(|n| n.contains("a.nif")));
+
+    // --resume without a journal of this install explains nothing either.
+    let mut req = request(&f);
+    req.resume = true;
+    assert_eq!(code(&install(req).0).0, ErrorCode::CheckFailed);
+    assert_eq!(read(&f.dest.join("meshes/a.nif")), b"somebody else's");
+}
+
+#[test]
+fn a_resume_passes_the_must_not_exist_check_for_a_file_the_interrupted_run_wrote() {
+    let f = fixture_refusing("inverted-resume", "meshes/a.nif");
+    interrupt(&f);
+    assert!(f.dest.join("meshes/a.nif").is_file());
+    let mut req = request(&f);
+    req.resume = true;
+    let (outcome, _) = install(req);
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    assert!(outcome.report.resumed && outcome.report.checks_passed);
+    assert!(f.dest.join("Out.bsa").is_file());
+    assert!(!f.dest.join(JOURNAL_FILE).exists());
+}
+
+#[test]
+fn a_resume_refuses_a_file_the_journal_does_not_explain_in_ttwrights_words() {
+    let f = fixture_refusing("inverted-foreign", "foreign.txt");
+    interrupt(&f);
+    std::fs::write(f.dest.join("foreign.txt"), b"not written by the install").unwrap();
+    let mut req = request(&f);
+    req.resume = true;
+    let outcome = install(req).0;
+    let (error_code, _) = code(&outcome);
+    assert_eq!(error_code, ErrorCode::CheckFailed);
+    let message = outcome.error.as_ref().unwrap().message.clone();
+    assert!(
+        message.contains("did not write") && message.contains("foreign.txt"),
+        "{message}"
+    );
+    assert!(
+        !message.contains("unmodified game files") && !message.contains("mod manager"),
+        "{message}"
+    );
+    assert!(
+        outcome
+            .report
+            .notes
+            .iter()
+            .all(|n| !n.contains("mod manager"))
+    );
+}
