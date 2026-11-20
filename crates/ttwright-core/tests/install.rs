@@ -391,3 +391,278 @@ fn a_package_header_under_another_extension_is_read_as_a_package() {
     // It is treated as a package (and fails as an unreadable one), not refused as a non-package.
     assert_eq!(code(&install(req).0).0, ErrorCode::MpiInvalid);
 }
+
+// ---- ttwright never writes outside the destination ----
+
+mod containment {
+    use super::*;
+    use ttwright_contract::{REDIRECT_DIR, RedirectedStep};
+    use ttwright_testkit::{Manifest, TempDir};
+
+    /// The manifest of [`Fixture`] plus one location at `outside` (a folder that is not the destination), which
+    /// `extra` may use; `extra` gets the manifest and the index of that location.
+    fn with_outside(outside: &Path, extra: impl FnOnce(&mut Manifest, usize)) -> Manifest {
+        let mut m = Fixture::manifest();
+        let idx = m.location("FNV Root", 0, &outside.display().to_string());
+        extra(&mut m, idx);
+        m
+    }
+
+    fn files_in(dir: &Path) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Ok(read) = std::fs::read_dir(dir) {
+            for entry in read.flatten() {
+                out.push(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn an_asset_for_an_outside_location_is_redirected_and_nothing_is_written_outside() {
+        let scratch = TempDir::new("outside-asset");
+        let outside = scratch.join("game");
+        std::fs::create_dir_all(&outside).unwrap();
+        let m = with_outside(&outside, |m, idx| {
+            m.asset(
+                0,
+                "",
+                loc::GAME_DATA,
+                idx,
+                "loose.txt",
+                Some("libvorbis.dll"),
+            );
+            m.asset(
+                0,
+                "",
+                loc::GAME_DATA,
+                idx,
+                "loose.txt",
+                Some("Data\\sub\\b.txt"),
+            );
+        });
+        let f = Fixture::with_manifest("redirect", &m);
+        let (outcome, _) = install(request(&f));
+        assert!(outcome.error.is_none(), "{:?}", outcome.error);
+        assert!(files_in(&outside).is_empty(), "nothing is written outside");
+        let root = f.dest.join(REDIRECT_DIR);
+        let r = &outcome.report;
+        assert_eq!(r.redirected_total, 2);
+        assert_eq!(r.redirected.len(), 2);
+        assert!(r.redirected.iter().all(|x| x.step == RedirectedStep::Asset));
+        assert!(r.redirected.iter().all(|x| x.location == "FNV Root"));
+        let written: Vec<&str> = r.redirected.iter().map(|x| x.written_to.as_str()).collect();
+        assert!(
+            written.iter().all(|w| w.starts_with(REDIRECT_DIR)),
+            "{written:?}"
+        );
+        assert_eq!(
+            read(&root.join("FNV_Root/libvorbis.dll")),
+            ttwright_testkit::LOOSE
+        );
+        assert_eq!(
+            read(&root.join("FNV_Root/Data/sub/b.txt")),
+            ttwright_testkit::LOOSE
+        );
+        // The files for the destination are installed as before.
+        assert_eq!(read(&f.dest.join("loose.txt")), ttwright_testkit::LOOSE);
+    }
+
+    #[test]
+    fn a_dry_run_reports_what_is_redirected_and_writes_nothing() {
+        let scratch = TempDir::new("outside-dry");
+        let outside = scratch.join("game");
+        std::fs::create_dir_all(&outside).unwrap();
+        let m = with_outside(&outside, |m, idx| {
+            m.asset(
+                0,
+                "",
+                loc::GAME_DATA,
+                idx,
+                "loose.txt",
+                Some("libvorbis.dll"),
+            );
+        });
+        let f = Fixture::with_manifest("redirect-dry", &m);
+        let mut req = request(&f);
+        req.dry_run = true;
+        let (outcome, _) = install(req);
+        assert!(outcome.error.is_none(), "{:?}", outcome.error);
+        assert_eq!(outcome.report.redirected_total, 1);
+        assert_eq!(outcome.report.redirected[0].location, "FNV Root");
+        assert!(files_in(&outside).is_empty());
+        assert!(!f.dest.join(REDIRECT_DIR).exists());
+        assert!(!f.dest.join("loose.txt").exists());
+    }
+
+    #[test]
+    fn post_install_delete_and_rename_outside_touch_nothing_outside() {
+        let scratch = TempDir::new("outside-post");
+        let outside = scratch.join("game");
+        std::fs::create_dir_all(&outside).unwrap();
+        let victim = outside.join("victim.txt");
+        std::fs::write(&victim, b"keep me").unwrap();
+        let other = outside.join("other.txt");
+        std::fs::write(&other, b"keep me too").unwrap();
+        let m = with_outside(&outside, |m, _| {
+            m.post_command(&format!("cmd.exe /C del \"{}\"", victim.display()));
+            m.post_command(&format!(
+                "cmd.exe /C ren \"{}\" \"moved.txt\"",
+                other.display()
+            ));
+        });
+        let f = Fixture::with_manifest("redirect-post", &m);
+        let (outcome, _) = install(request(&f));
+        assert!(outcome.error.is_none(), "{:?}", outcome.error);
+        assert_eq!(read(&victim), b"keep me");
+        assert_eq!(read(&other), b"keep me too");
+        assert!(!outside.join("moved.txt").exists());
+        let r = &outcome.report;
+        assert_eq!(r.redirected_total, 2);
+        assert!(
+            r.redirected
+                .iter()
+                .all(|x| x.step == RedirectedStep::PostInstall)
+        );
+    }
+
+    #[test]
+    fn dot_dot_in_a_manifest_path_never_leaves_the_destination() {
+        let scratch = TempDir::new("outside-dotdot");
+        let f_dir = scratch.join("f");
+        std::fs::create_dir_all(&f_dir).unwrap();
+        let mut m = Fixture::manifest();
+        m.asset(
+            0,
+            "",
+            loc::GAME_DATA,
+            loc::DEST,
+            "loose.txt",
+            Some("..\\..\\..\\escaped-dotdot.txt"),
+        );
+        let f = Fixture::with_manifest("dotdot", &m);
+        let (outcome, _) = install(request(&f));
+        let _ = outcome;
+        for ancestor in f.dest.ancestors().skip(1).take(4) {
+            assert!(
+                !ancestor.join("escaped-dotdot.txt").exists(),
+                "written to {}",
+                ancestor.display()
+            );
+        }
+        assert!(!f.dest.join("escaped-dotdot.txt").exists() || f.dest.starts_with(&f.dest));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_inside_the_destination_pointing_outside_is_not_followed() {
+        let scratch = TempDir::new("outside-link");
+        let outside = scratch.join("elsewhere");
+        std::fs::create_dir_all(&outside).unwrap();
+        let mut m = Fixture::manifest();
+        m.asset(
+            0,
+            "",
+            loc::GAME_DATA,
+            loc::DEST,
+            "loose.txt",
+            Some("link\\x.txt"),
+        );
+        let f = Fixture::with_manifest("symlink", &m);
+        std::fs::create_dir_all(&f.dest).unwrap();
+        std::os::unix::fs::symlink(&outside, f.dest.join("link")).unwrap();
+        let (outcome, _) = install(request(&f));
+        assert!(files_in(&outside).is_empty(), "written through the link");
+        assert!(
+            outcome.error.is_some() || outcome.report.assets.failed > 0,
+            "the asset behind the link must fail"
+        );
+    }
+
+    #[test]
+    fn an_archive_to_create_outside_is_not_written_there() {
+        let scratch = TempDir::new("outside-bsa");
+        let outside = scratch.join("game");
+        std::fs::create_dir_all(&outside).unwrap();
+        let mut m = Fixture::manifest();
+        let bsa = m.archive_target("Evil.bsa", &format!("{}/Evil.bsa", outside.display()));
+        m.asset(
+            0,
+            "",
+            loc::GAME_DATA,
+            bsa,
+            "loose.txt",
+            Some("textures\\x.txt"),
+        );
+        let f = Fixture::with_manifest("bsa-outside", &m);
+        let _ = install(request(&f));
+        assert!(files_in(&outside).is_empty(), "{:?}", files_in(&outside));
+    }
+
+    #[test]
+    fn a_file_time_outside_changes_nothing_outside() {
+        let scratch = TempDir::new("outside-attr");
+        let outside = scratch.join("game");
+        std::fs::create_dir_all(&outside).unwrap();
+        let victim = outside.join("victim.txt");
+        std::fs::write(&victim, b"x").unwrap();
+        let before = std::fs::metadata(&victim).unwrap().modified().unwrap();
+        let m = with_outside(&outside, |m, _| {
+            m.file_attr(&victim.display().to_string(), "2008-10-01T12:00:00+00:00");
+        });
+        let f = Fixture::with_manifest("attr-outside", &m);
+        let (outcome, _) = install(request(&f));
+        let after = std::fs::metadata(&victim).unwrap().modified().unwrap();
+        assert_eq!(before, after);
+        assert!(outcome.report.redirected_total >= 1);
+        assert!(
+            outcome
+                .report
+                .redirected
+                .iter()
+                .any(|x| x.step == RedirectedStep::PostInstall)
+        );
+    }
+
+    #[test]
+    fn a_resumed_install_keeps_the_redirected_files_and_reports_them_again() {
+        let scratch = TempDir::new("outside-resume");
+        let outside = scratch.join("game");
+        std::fs::create_dir_all(&outside).unwrap();
+        let m = with_outside(&outside, |m, idx| {
+            m.asset(
+                0,
+                "",
+                loc::GAME_DATA,
+                idx,
+                "loose.txt",
+                Some("libvorbis.dll"),
+            );
+        });
+        let f = Fixture::with_manifest("redirect-resume", &m);
+        let cancel = CancelToken::new();
+        let mut req = request(&f);
+        req.cancel = cancel.clone();
+        let outcome = run_install(req, |e| {
+            if let InstallEvent::Event(Event::Progress { message, .. }) = &e
+                && message.contains("directory assets")
+            {
+                cancel.cancel();
+            }
+        });
+        assert_eq!(code(&outcome).0, ErrorCode::Cancelled);
+
+        let mut req = request(&f);
+        req.resume = true;
+        let (outcome, _) = install(req);
+        assert!(outcome.error.is_none(), "{:?}", outcome.error);
+        assert!(outcome.report.resumed);
+        assert_eq!(outcome.report.redirected_total, 1);
+        assert_eq!(
+            read(&f.dest.join(REDIRECT_DIR).join("FNV_Root/libvorbis.dll")),
+            ttwright_testkit::LOOSE
+        );
+        assert!(files_in(&outside).is_empty());
+    }
+}

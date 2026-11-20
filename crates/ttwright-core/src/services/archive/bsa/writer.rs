@@ -1,4 +1,5 @@
 use super::StreamingBsaBuilder;
+use crate::services::runtime::Containment;
 use anyhow::{Context, Result};
 use ba2::tes4::{ArchiveFlags, ArchiveTypes, Version};
 use std::collections::HashMap;
@@ -7,6 +8,13 @@ use std::path::{Path, PathBuf};
 use tracing::info;
 
 /// These prefixes are internal identifiers, not part of actual output filenames
+/// Where the archive `name` is written in `dest_dir`; refuses a path that resolves outside it.
+fn archive_output_path(dest_dir: &Path, name: &str) -> Result<PathBuf> {
+    let path = dest_dir.join(name);
+    Containment::new(dest_dir).check(&path)?;
+    Ok(path)
+}
+
 fn strip_bsa_prefix(name: &str) -> &str {
     // Common prefixes used in MPI manifests to identify BSA sources/targets
     // Check case-insensitively
@@ -62,7 +70,12 @@ impl BsaWriterManager {
         archive_compressed: Option<bool>,
     ) -> Result<()> {
         // Strip common prefixes from BSA name for output filename
+        // An archive is always written into the destination, as a file of its own name: never below a folder.
         let output_name = strip_bsa_prefix(bsa_name);
+        let output_name = output_name
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or(output_name);
         let name_lower = output_name.to_lowercase();
 
         // Determine version - prioritize name-based detection as it's more reliable
@@ -214,7 +227,7 @@ impl BsaWriterManager {
             None => return Ok(None),
         };
 
-        let output_path = dest_dir.join(&bsa_name);
+        let output_path = archive_output_path(dest_dir, &bsa_name)?;
         let file_count = builder.file_count();
 
         info!("Building BSA: {} ({} files)", bsa_name, file_count);
@@ -268,7 +281,14 @@ impl BsaWriterManager {
 
         for (idx, (_, bsa_name, builder, file_count)) in builders_to_process.into_iter().enumerate()
         {
-            let output_path = dest_dir.join(&bsa_name);
+            let output_path = match archive_output_path(dest_dir, &bsa_name) {
+                Ok(path) => path,
+                Err(e) => {
+                    tracing::warn!("{bsa_name}: {e:#}");
+                    fail += 1;
+                    continue;
+                }
+            };
 
             tracing::info!(
                 "  [{}/{}] {} ({} files) ... building",
@@ -346,7 +366,14 @@ impl BsaWriterManager {
 
         for (idx, (_, bsa_name, builder)) in builders_to_process.into_iter().enumerate() {
             callback(idx + 1, total, &bsa_name);
-            let output_path = dest_dir.join(&bsa_name);
+            let output_path = match archive_output_path(dest_dir, &bsa_name) {
+                Ok(path) => path,
+                Err(e) => {
+                    tracing::warn!("{bsa_name}: {e:#}");
+                    fail += 1;
+                    continue;
+                }
+            };
 
             match builder.build(&output_path) {
                 Ok(_) => {

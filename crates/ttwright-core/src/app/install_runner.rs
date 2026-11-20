@@ -5,7 +5,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use ttwright_contract::{Counts, ErrorCode, Event, Phase, VersionSupport, ttw_version_support};
+use ttwright_contract::{
+    Counts, ErrorCode, Event, Phase, REDIRECT_DIR, REDIRECTED_LISTED, RedirectedFile,
+    VersionSupport, ttw_version_support,
+};
 
 use crate::app::{
     CancelToken, GameNeeds, InstallError, InstallEvent, Journal, check_manifest, classify,
@@ -14,6 +17,7 @@ use crate::models::{Check, InstallConfig};
 use crate::services::{
     AssetProcessor, FileVerifier, GameDetection, LocationResolver, ManifestLoader, MpiExtractor,
     MpiPathIndex, MpiStore, XdeltaManager, apply_file_attrs, compute_md5, compute_sha1,
+    redirected_attr_targets,
 };
 
 /// What to install, from where, into where.
@@ -61,6 +65,11 @@ pub struct InstallReport {
     pub post_install: Counts,
     /// An earlier run's journal was continued.
     pub resumed: bool,
+    /// Files the manifest meant for a place outside the destination, put under `_ttwright_game_root/` in the
+    /// destination instead; at most [`REDIRECTED_LISTED`] are listed. A dry run reports them too.
+    pub redirected: Vec<RedirectedFile>,
+    /// How many files were redirected, also those past the listed ones.
+    pub redirected_total: u64,
     /// Detail lines on failures, at most twenty.
     pub messages: Vec<String>,
     /// Wall time.
@@ -340,6 +349,30 @@ where
         processor = processor.with_mpi_index(index);
     }
 
+    // The rule: nothing is written outside the destination. What the manifest meant for a game folder goes under
+    // `_ttwright_game_root/` in the destination; it is listed here, before anything is written, also on a dry run.
+    let post_commands = ManifestLoader::get_post_commands(&manifest);
+    let file_attrs = manifest.file_attrs.clone().unwrap_or_default();
+    let mut redirected = processor.redirected_assets(&assets);
+    redirected.extend(ManifestLoader::redirected_post_targets(
+        &post_commands,
+        &destination,
+    ));
+    redirected.extend(redirected_attr_targets(&file_attrs, &destination));
+    report.redirected_total = redirected.len() as u64;
+    if !redirected.is_empty() {
+        let message = redirect_summary(redirected.len());
+        emit(InstallEvent::warning(message.clone()));
+        for file in &redirected {
+            emit(InstallEvent::log(format!(
+                "Redirected: {} ({}) -> {}",
+                file.target, file.location, file.written_to
+            )));
+        }
+    }
+    redirected.truncate(REDIRECTED_LISTED);
+    report.redirected = redirected;
+
     // On resume, skip the loose files already written and every file of an archive already written.
     let archive_locations = processor.archive_locations();
     let archive_total = archive_locations
@@ -425,8 +458,6 @@ where
             "Post-installation steps were done by the earlier run",
         ));
     } else if !request.dry_run {
-        let post_commands = ManifestLoader::get_post_commands(&manifest);
-        let file_attrs = manifest.file_attrs.clone().unwrap_or_default();
         report.post_install.total = (post_commands.len() + file_attrs.len()) as u64;
         emit(InstallEvent::log("Executing post-installation commands..."));
         let (ok, failed) = ManifestLoader::execute_post_commands(&post_commands, &destination)?;
@@ -454,6 +485,21 @@ where
     journal.finish()?;
     emit(InstallEvent::log("Installation complete"));
     Ok(())
+}
+
+/// The plain sentence for `count` redirected files, for the summary and the warning.
+#[must_use]
+pub fn redirect_summary(count: usize) -> String {
+    let (files, were) = if count == 1 {
+        ("file", "was")
+    } else {
+        ("files", "were")
+    };
+    format!(
+        "{count} {files} meant for the game folder {were} put in {REDIRECT_DIR}/ instead; \
+         the native engine does not need {}",
+        if count == 1 { "it" } else { "them" }
+    )
 }
 
 /// A dry run's staging folder, removed when dropped.

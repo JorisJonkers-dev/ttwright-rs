@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::paths::find_file_case_insensitive;
 use super::processor::AssetProcessor;
@@ -8,6 +8,8 @@ use super::stats::OpType;
 use crate::models::Asset;
 use crate::services::path_utils::safe_join;
 use crate::services::{AudioFormat, AudioProcessor};
+use crate::services::{Placed, redirected_file};
+use ttwright_contract::{RedirectedFile, RedirectedStep};
 
 impl AssetProcessor {
     pub(super) fn process_asset(&self, asset: &Asset) -> Result<()> {
@@ -175,14 +177,45 @@ impl AssetProcessor {
         }
     }
 
-    /// Get target path for an asset
-    fn get_target_path(&self, asset: &Asset) -> Result<PathBuf> {
-        let target_dir = self.resolver.get_directory_path(asset.target_loc)?;
+    /// Where an asset's loose file goes: the location's folder, or `_ttwright_game_root/` in the destination when
+    /// the location is outside the destination.
+    fn place_target(&self, asset: &Asset) -> Result<Placed> {
         let target_file = asset.target_path.as_deref().unwrap_or(&asset.source_path);
-
         // Normalize path separators for Linux
         let normalized = target_file.replace('\\', "/");
-        safe_join(&target_dir, &normalized)
+        self.resolver.place(asset.target_loc, &normalized)
+    }
+
+    /// The assets whose loose file is meant for a place outside the destination, with where each one goes
+    /// instead. Nothing is written. Archive targets are not listed: archives are always written into the
+    /// destination.
+    pub fn redirected_assets(&self, assets: &[Asset]) -> Vec<RedirectedFile> {
+        let archives = self.archive_locations();
+        let mut out = Vec::new();
+        for asset in assets {
+            if archives.contains(&asset.target_loc)
+                || !self
+                    .resolver
+                    .get_location(asset.target_loc)
+                    .is_ok_and(|l| l.is_directory())
+            {
+                continue;
+            }
+            // An invalid path fails when the asset is processed; it is not a redirect.
+            let Ok(placed) = self.place_target(asset) else {
+                continue;
+            };
+            if let Some((location, meant)) = placed.redirected_from {
+                out.push(redirected_file(
+                    RedirectedStep::Asset,
+                    location,
+                    &meant,
+                    &placed.path,
+                    self.resolver.containment().root(),
+                ));
+            }
+        }
+        out
     }
 
     /// Write data to target location
@@ -197,11 +230,16 @@ impl AssetProcessor {
             writer.add_file(asset.target_loc, &normalized, data.to_vec())?;
         } else {
             drop(writer);
-            let target_path = self.get_target_path(asset)?;
+            let target_path = self.place_target(asset)?.path;
+            // The last line of defence: whatever the manifest said and however the path was built, nothing is
+            // written to a place that resolves outside the destination.
+            self.resolver.containment().check(&target_path)?;
 
             if let Some(parent) = target_path.parent() {
                 fs::create_dir_all(parent)?;
             }
+            // The folders just made may have been links; check the final path again before the write.
+            self.resolver.containment().check(&target_path)?;
             fs::write(&target_path, data)?;
         }
 

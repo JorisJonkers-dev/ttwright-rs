@@ -4,9 +4,11 @@
 
 use anyhow::{Context, Result};
 
-use super::post_commands::post_command_path;
+use super::post_commands::{post_command_path, redirect_record};
 use crate::models::FileAttr;
 use crate::services::processing::asset::paths::find_file_case_insensitive;
+use crate::services::runtime::Containment;
+use ttwright_contract::RedirectedFile;
 
 /// Set the modification time of each file the manifest names. Returns `(set, failed)`; a file that is missing
 /// counts as failed, with a warning naming it.
@@ -28,6 +30,20 @@ pub fn apply_file_attrs(attrs: &[FileAttr], destination: &str) -> Result<(usize,
     Ok((set, failed))
 }
 
+/// The files the manifest sets a time on that are outside `destination`, with where each one goes instead
+/// (`_ttwright_game_root/` in the destination). Nothing is touched.
+#[must_use]
+pub fn redirected_attr_targets(attrs: &[FileAttr], destination: &str) -> Vec<RedirectedFile> {
+    attrs
+        .iter()
+        .filter_map(|attr| {
+            let raw = attr.value.as_deref().unwrap_or_default();
+            let path = raw.replace("%DESTINATION%", destination).replace('\\', "/");
+            redirect_record(&post_command_path(destination, &path).ok()?, destination)
+        })
+        .collect()
+}
+
 /// The instant as a `SystemTime`, before 1970 too (`time` has no conversion of its own).
 fn system_time(instant: time::OffsetDateTime) -> std::time::SystemTime {
     let secs = instant.unix_timestamp();
@@ -46,13 +62,17 @@ fn apply_one(attr: &FileAttr, destination: &str) -> Result<()> {
     let instant = time::OffsetDateTime::parse(when, &time::format_description::well_known::Rfc3339)
         .with_context(|| format!("{raw}: the time {when:?} is not an RFC 3339 date"))?;
     let path = raw.replace("%DESTINATION%", destination).replace('\\', "/");
-    let path = post_command_path(destination, &path)?;
+    let path = post_command_path(destination, &path)?.path;
+    let guard = Containment::new(std::path::Path::new(destination));
+    guard.check(&path)?;
     let path = if path.exists() {
         path
     } else {
         find_file_case_insensitive(&path)
             .with_context(|| format!("{}: no such file in the destination", path.display()))?
     };
+    // The file found case-insensitively, and links, are checked again on the final path.
+    guard.check(&path)?;
     let file = std::fs::File::options()
         .write(true)
         .open(&path)

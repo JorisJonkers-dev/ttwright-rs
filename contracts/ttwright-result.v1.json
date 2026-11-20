@@ -86,6 +86,21 @@
       "description": "Post-installation commands (rename, delete) and file times.",
       "$ref": "#/$defs/Counts"
     },
+    "redirected": {
+      "description": "Files the manifest meant for a place outside the destination (a game folder), put under\n`_ttwright_game_root/` in the destination instead; at most 100 are listed. Reported by a dry run too.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/RedirectedFile"
+      }
+    },
+    "redirected_total": {
+      "description": "How many files were redirected, also those past the 100 listed.",
+      "type": "integer",
+      "format": "uint64",
+      "default": 0,
+      "minimum": 0
+    },
     "resumed": {
       "description": "Whether this run continued an interrupted one.",
       "type": "boolean"
@@ -298,6 +313,49 @@
         "title",
         "version",
         "supported"
+      ]
+    },
+    "RedirectedFile": {
+      "description": "A file the manifest meant for a place outside the destination, put under `_ttwright_game_root/` in the\ndestination instead. ttwright never writes outside the destination, whatever the manifest says.",
+      "type": "object",
+      "properties": {
+        "location": {
+          "description": "The manifest's name of the location it was meant for, for example `FNV Root`.",
+          "type": "string"
+        },
+        "step": {
+          "description": "What kind of step it was.",
+          "$ref": "#/$defs/RedirectedStep"
+        },
+        "target": {
+          "description": "The path the manifest meant, as it resolved on this machine.",
+          "type": "string"
+        },
+        "written_to": {
+          "description": "Where it went, relative to `output_dir`, with `/` as separator.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "step",
+        "location",
+        "target",
+        "written_to"
+      ]
+    },
+    "RedirectedStep": {
+      "description": "The step of a package that was redirected.",
+      "oneOf": [
+        {
+          "description": "An asset operation (copy, new, patch, audio).",
+          "type": "string",
+          "const": "asset"
+        },
+        {
+          "description": "A post-installation command (delete, rename) or a file time.",
+          "type": "string",
+          "const": "post_install"
+        }
       ]
     },
     "Status": {

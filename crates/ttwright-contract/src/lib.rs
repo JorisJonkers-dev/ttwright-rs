@@ -19,7 +19,10 @@ mod supports;
 
 pub use error::ErrorCode;
 pub use event::{Event, EventLine, Phase};
-pub use result::{Counts, ErrorInfo, PackageInfo, ResultDoc, Status};
+pub use result::{
+    Counts, ErrorInfo, PackageInfo, REDIRECT_DIR, REDIRECTED_LISTED, RedirectedFile,
+    RedirectedStep, ResultDoc, Status,
+};
 pub use schema::{DocumentKind, SchemaError, check, schema_file_name, schema_json};
 pub use supports::{
     FEATURES, Feature, SupportedPackage, Supports, TTW_CURRENT_RELEASE, TTW_VERSIONS,

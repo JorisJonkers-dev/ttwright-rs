@@ -90,6 +90,12 @@ The error codes are stable: `usage`, `mpi_not_found`, `mpi_invalid`, `not_a_pack
 `unsupported_feature`, `unsupported_version`, `game_path_missing`, `game_not_found`, `check_failed`,
 `asset_failed`, `archive_failed`, `post_command_failed`, `resume_mismatch`, `cancelled`, `io`, `internal`.
 
+ttwright never writes outside the destination. A file the manifest meant for a place outside it (the real TTW
+package's first assets go to `FNV Root`) is put under `<destination>/_ttwright_game_root/` with its relative path
+instead. The result lists them in `redirected` (up to 100: `step`, `location`, `target`, `written_to`) and counts them
+in `redirected_total`, also on a dry run; the plain output prints a summary and the list. A check on the final path
+(`..` and symbolic links resolved) guards every write, delete, rename and file time.
+
 The schemas are in [`contracts/`](contracts) and attached to every release; `ttwright schema result` prints them.
 Every document carries an integer `schema_version`; `ttwright contracts --json` lists the versions this build
 speaks.
