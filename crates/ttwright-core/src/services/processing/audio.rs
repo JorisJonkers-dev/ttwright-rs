@@ -10,12 +10,14 @@ use mp3lame_encoder::{Builder, DualPcm, FlushNoGap, InterleavedPcm};
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
-use symphonia::core::audio::AudioBufferRef;
-use symphonia::core::codecs::{CODEC_TYPE_VORBIS, DecoderOptions};
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::audio::GenericAudioBufferRef;
+use symphonia::core::codecs::CodecParameters;
+use symphonia::core::codecs::audio::AudioDecoderOptions;
+use symphonia::core::codecs::audio::well_known::CODEC_ID_VORBIS;
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 use vorbis_rs::{VorbisBitrateManagementStrategy, VorbisEncoderBuilder};
 
 /// Audio processing service for decoding, resampling, and encoding audio files
@@ -76,56 +78,7 @@ impl AudioProcessor {
             hint.with_extension(ext);
         }
 
-        let format_opts = FormatOptions::default();
-        let metadata_opts = MetadataOptions::default();
-
-        let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &format_opts, &metadata_opts)
-            .context("Failed to probe audio format")?;
-
-        let mut format = probed.format;
-        let track = format.default_track().context("No audio tracks found")?;
-
-        let track_id = track.id;
-        let codec_params = track.codec_params.clone();
-
-        let sample_rate = codec_params.sample_rate.context("Unknown sample rate")?;
-        let channels = codec_params
-            .channels
-            .context("Unknown channel count")?
-            .count();
-
-        let decoder_opts = DecoderOptions::default();
-        let mut decoder = symphonia::default::get_codecs()
-            .make(&codec_params, &decoder_opts)
-            .context("Failed to create decoder")?;
-
-        let mut all_samples: Vec<f32> = Vec::new();
-
-        loop {
-            let packet = match format.next_packet() {
-                Ok(packet) => packet,
-                Err(symphonia::core::errors::Error::IoError(e))
-                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
-                {
-                    break;
-                }
-                Err(e) => return Err(e.into()),
-            };
-
-            if packet.track_id() != track_id {
-                continue;
-            }
-
-            let decoded = decoder.decode(&packet)?;
-            Self::append_samples(&decoded, &mut all_samples);
-        }
-
-        Ok(DecodedAudio {
-            samples: all_samples,
-            channels,
-            sample_rate,
-        })
+        Self::decode_stream(mss, &hint)
     }
 
     /// Decode audio from raw bytes (in-memory)
@@ -138,35 +91,53 @@ impl AudioProcessor {
             hint.with_extension(ext);
         }
 
-        let format_opts = FormatOptions::default();
-        let metadata_opts = MetadataOptions::default();
+        Self::decode_stream(mss, &hint)
+    }
 
-        let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &format_opts, &metadata_opts)
-            .context("Failed to probe audio format")?;
+    fn probe_format(mss: MediaSourceStream<'static>, hint: &Hint) -> Result<Box<dyn FormatReader>> {
+        symphonia::default::get_probe()
+            .probe(
+                hint,
+                mss,
+                FormatOptions::default(),
+                MetadataOptions::default(),
+            )
+            .context("Failed to probe audio format")
+    }
 
-        let mut format = probed.format;
-        let track = format.default_track().context("No audio tracks found")?;
+    fn decode_stream(mss: MediaSourceStream<'static>, hint: &Hint) -> Result<DecodedAudio> {
+        let mut format = Self::probe_format(mss, hint)?;
+        let track = format
+            .default_track(TrackType::Audio)
+            .context("No audio tracks found")?;
 
         let track_id = track.id;
-        let codec_params = track.codec_params.clone();
+        let codec_params = match track.codec_params.as_ref() {
+            Some(CodecParameters::Audio(params)) => params.clone(),
+            _ => bail!("No audio tracks found"),
+        };
 
         let sample_rate = codec_params.sample_rate.context("Unknown sample rate")?;
         let channels = codec_params
             .channels
+            .as_ref()
             .context("Unknown channel count")?
             .count();
 
-        let decoder_opts = DecoderOptions::default();
+        // Symphonia 0.5 never trimmed encoder delay or padding; 0.6 does by default.
+        let mut decoder_opts = AudioDecoderOptions::default();
+        decoder_opts.gapless = false;
         let mut decoder = symphonia::default::get_codecs()
-            .make(&codec_params, &decoder_opts)
+            .make_audio_decoder(&codec_params, &decoder_opts)
             .context("Failed to create decoder")?;
 
         let mut all_samples: Vec<f32> = Vec::new();
+        let mut scratch: Vec<f32> = Vec::new();
 
         loop {
             let packet = match format.next_packet() {
-                Ok(packet) => packet,
+                Ok(Some(packet)) => packet,
+                Ok(None) => break,
                 Err(symphonia::core::errors::Error::IoError(e))
                     if e.kind() == std::io::ErrorKind::UnexpectedEof =>
                 {
@@ -175,12 +146,12 @@ impl AudioProcessor {
                 Err(e) => return Err(e.into()),
             };
 
-            if packet.track_id() != track_id {
+            if packet.track_id != track_id {
                 continue;
             }
 
             let decoded = decoder.decode(&packet)?;
-            Self::append_samples(&decoded, &mut all_samples);
+            Self::append_samples(&decoded, &mut scratch, &mut all_samples);
         }
 
         Ok(DecodedAudio {
@@ -199,103 +170,33 @@ impl AudioProcessor {
             hint.with_extension(ext);
         }
 
-        let probed = symphonia::default::get_probe()
-            .format(
-                &hint,
-                mss,
-                &FormatOptions::default(),
-                &MetadataOptions::default(),
-            )
-            .context("Failed to probe audio format")?;
-
-        let track = probed
-            .format
-            .default_track()
+        let format = Self::probe_format(mss, &hint)?;
+        let track = format
+            .default_track(TrackType::Audio)
             .context("No audio tracks found")?;
-        let codec_params = &track.codec_params;
+        let Some(CodecParameters::Audio(codec_params)) = track.codec_params.as_ref() else {
+            bail!("No audio tracks found");
+        };
 
         Ok(AudioInfo {
-            codec_is_vorbis: codec_params.codec == CODEC_TYPE_VORBIS,
+            codec_is_vorbis: codec_params.codec == CODEC_ID_VORBIS,
             sample_rate: codec_params.sample_rate,
-            channels: codec_params.channels.map(|channels| channels.count()),
+            channels: codec_params
+                .channels
+                .as_ref()
+                .map(|channels| channels.count()),
         })
     }
 
-    /// Append samples from a Symphonia audio buffer in interleaved format.
-    /// Symphonia returns planar data (one plane per channel), so we must
-    /// interleave them: [L1, R1, L2, R2, ...] not [L1..Ln, R1..Rn].
-    fn append_samples(buffer: &AudioBufferRef, output: &mut Vec<f32>) {
-        match buffer {
-            AudioBufferRef::F32(buf) => {
-                let signal = buf.planes();
-                let planes = signal.planes();
-                if planes.len() <= 1 {
-                    for plane in planes {
-                        output.extend_from_slice(plane);
-                    }
-                } else {
-                    let num_frames = planes[0].len();
-                    output.reserve(num_frames * planes.len());
-                    for i in 0..num_frames {
-                        for plane in planes {
-                            output.push(plane[i]);
-                        }
-                    }
-                }
-            }
-            AudioBufferRef::S16(buf) => {
-                let signal = buf.planes();
-                let planes = signal.planes();
-                if planes.len() <= 1 {
-                    for plane in planes {
-                        output.extend(plane.iter().map(|&s| s as f32 / 32768.0));
-                    }
-                } else {
-                    let num_frames = planes[0].len();
-                    output.reserve(num_frames * planes.len());
-                    for i in 0..num_frames {
-                        for plane in planes {
-                            output.push(plane[i] as f32 / 32768.0);
-                        }
-                    }
-                }
-            }
-            AudioBufferRef::S32(buf) => {
-                let signal = buf.planes();
-                let planes = signal.planes();
-                if planes.len() <= 1 {
-                    for plane in planes {
-                        output.extend(plane.iter().map(|&s| s as f32 / 2147483648.0));
-                    }
-                } else {
-                    let num_frames = planes[0].len();
-                    output.reserve(num_frames * planes.len());
-                    for i in 0..num_frames {
-                        for plane in planes {
-                            output.push(plane[i] as f32 / 2147483648.0);
-                        }
-                    }
-                }
-            }
-            AudioBufferRef::U8(buf) => {
-                let signal = buf.planes();
-                let planes = signal.planes();
-                if planes.len() <= 1 {
-                    for plane in planes {
-                        output.extend(plane.iter().map(|&s| (s as f32 - 128.0) / 128.0));
-                    }
-                } else {
-                    let num_frames = planes[0].len();
-                    output.reserve(num_frames * planes.len());
-                    for i in 0..num_frames {
-                        for plane in planes {
-                            output.push((plane[i] as f32 - 128.0) / 128.0);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
+    /// Append samples from a Symphonia audio buffer in interleaved format
+    /// ([L1, R1, L2, R2, ...]), converted to f32. `scratch` is reused between calls.
+    fn append_samples(
+        buffer: &GenericAudioBufferRef<'_>,
+        scratch: &mut Vec<f32>,
+        output: &mut Vec<f32>,
+    ) {
+        buffer.copy_to_vec_interleaved(scratch);
+        output.extend_from_slice(scratch);
     }
 
     /// Resample audio to target sample rate
