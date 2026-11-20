@@ -752,3 +752,68 @@ fn a_resume_refuses_a_file_the_journal_does_not_explain_in_ttwrights_words() {
             .all(|n| !n.contains("mod manager"))
     );
 }
+
+/// A fixture with one asset for a location outside the destination (so it is written under the redirect folder
+/// as `libvorbis.dll`, from the same archive as `meshes/a.nif`, which the interrupted run finishes) and a "must not exist" check on `check_file` inside the destination.
+fn fixture_redirected_refusing(label: &str, outside: &Path, check_file: &str) -> Fixture {
+    let mut m = Fixture::manifest();
+    let idx = m.location("FNV Root", 0, &outside.display().to_string());
+    m.asset(
+        0,
+        "",
+        loc::GAME_ARCHIVE,
+        idx,
+        "meshes\\a.nif",
+        Some("libvorbis.dll"),
+    );
+    m.check(
+        json!({"Type": 0, "Inverted": true, "Loc": loc::DEST, "File": check_file,
+        "CustomMessage": "install using a mod manager into an empty folder"}),
+    );
+    Fixture::with_manifest(label, &m)
+}
+
+#[test]
+fn a_resume_passes_the_must_not_exist_check_for_a_redirected_file_the_interrupted_run_wrote() {
+    let scratch = ttwright_testkit::TempDir::new("redirected-own");
+    let outside = scratch.join("game");
+    std::fs::create_dir_all(&outside).unwrap();
+    let redirected = format!("{}/FNV_Root/libvorbis.dll", ttwright_contract::REDIRECT_DIR);
+    let f = fixture_redirected_refusing("inverted-redirected-own", &outside, &redirected);
+    interrupt(&f);
+    assert!(
+        f.dest.join(&redirected).is_file(),
+        "the interrupted run wrote the redirected file"
+    );
+    let mut req = request(&f);
+    req.resume = true;
+    let (outcome, _) = install(req);
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    assert!(outcome.report.resumed && outcome.report.checks_passed);
+    assert!(f.dest.join(&redirected).is_file());
+}
+
+#[test]
+fn a_resume_refuses_a_redirected_file_the_interrupted_run_did_not_write() {
+    let scratch = ttwright_testkit::TempDir::new("redirected-foreign");
+    let outside = scratch.join("game");
+    std::fs::create_dir_all(&outside).unwrap();
+    let redirected = format!("{}/FNV_Root/foreign.dll", ttwright_contract::REDIRECT_DIR);
+    let f = fixture_redirected_refusing("inverted-redirected-foreign", &outside, &redirected);
+    interrupt(&f);
+    std::fs::create_dir_all(f.dest.join(&redirected).parent().unwrap()).unwrap();
+    std::fs::write(f.dest.join(&redirected), b"not written by the install").unwrap();
+    let mut req = request(&f);
+    req.resume = true;
+    let outcome = install(req).0;
+    assert_eq!(code(&outcome).0, ErrorCode::CheckFailed);
+    let message = outcome.error.as_ref().unwrap().message.clone();
+    assert!(
+        message.contains("did not write") && message.contains("foreign.dll"),
+        "{message}"
+    );
+    assert_eq!(
+        read(&f.dest.join(&redirected)),
+        b"not written by the install"
+    );
+}
