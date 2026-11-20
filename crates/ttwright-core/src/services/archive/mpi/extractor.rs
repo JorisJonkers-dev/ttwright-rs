@@ -15,13 +15,54 @@ use crate::services::path_utils::safe_join;
 pub struct MpiExtractor;
 
 impl MpiExtractor {
-    /// Check if the path is an .mpi file that needs extraction
+    /// Check if the path is a package file that needs extraction: a `.mpi` file, or any file that starts with the
+    /// package's `BSA\0` header, whatever its name.
     pub fn is_mpi_file(path: &Path) -> bool {
         path.is_file()
-            && path
+            && (path
                 .extension()
                 .map(|e| e.eq_ignore_ascii_case("mpi"))
                 .unwrap_or(false)
+                || Self::header(path).is_some_and(|h| h.starts_with(b"BSA\0")))
+    }
+
+    fn header(path: &Path) -> Option<Vec<u8>> {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        fs::File::open(path)
+            .ok()?
+            .take(8)
+            .read_to_end(&mut buf)
+            .ok()?;
+        Some(buf)
+    }
+
+    /// What to tell the user about an existing file that is not a package, by its header: what it is and what to
+    /// do. `None` when `path` is not an existing file.
+    pub fn not_a_package_message(path: &Path) -> Option<String> {
+        if !path.is_file() {
+            return None;
+        }
+        let header = Self::header(path).unwrap_or_default();
+        let kind = if header.starts_with(&[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]) {
+            Some("a 7-Zip archive")
+        } else if header.starts_with(b"PK\x03\x04") {
+            Some("a ZIP archive")
+        } else if header.starts_with(b"Rar!") {
+            Some("a RAR archive")
+        } else {
+            None
+        };
+        let name = path.display();
+        Some(match kind {
+            Some(kind) => format!(
+                "{name} is {kind}, not a TTW package. If it is the download, extract it and give the .mpi file inside it"
+            ),
+            None => format!(
+                "{name} is not a TTW package: it is not a .mpi file and does not start with the package header (BSA\\0). \
+                 If it is the download archive, extract it and give the .mpi file inside it"
+            ),
+        })
     }
 
     /// Extract .mpi file to a directory

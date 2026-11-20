@@ -768,6 +768,8 @@ where
     } else if request.mpi_path.is_dir() {
         let index = MpiPathIndex::build(&request.mpi_path)?;
         Ok((request.mpi_path.clone(), false, None, Some(index)))
+    } else if let Some(message) = MpiExtractor::not_a_package_message(&request.mpi_path) {
+        Err(InstallError::new(ErrorCode::NotAPackage, message).into())
     } else {
         Err(InstallError::new(
             ErrorCode::MpiNotFound,

@@ -19,6 +19,9 @@ pub enum ErrorCode {
     MpiNotFound,
     /// The MPI package cannot be read: not an archive, or truncated.
     MpiInvalid,
+    /// The path exists but is not a package: a file that is neither a `.mpi` nor starts with the package's `BSA\0`
+    /// header (the download archive, for example, which holds the `.mpi`).
+    NotAPackage,
     /// The package has no manifest (`_package/index.json`).
     ManifestMissing,
     /// The manifest is not valid JSON or does not have the manifest's shape.
@@ -56,6 +59,7 @@ impl ErrorCode {
         Self::Usage,
         Self::MpiNotFound,
         Self::MpiInvalid,
+        Self::NotAPackage,
         Self::ManifestMissing,
         Self::ManifestInvalid,
         Self::UnsupportedFeature,
@@ -79,6 +83,7 @@ impl ErrorCode {
             Self::Usage => "usage",
             Self::MpiNotFound => "mpi_not_found",
             Self::MpiInvalid => "mpi_invalid",
+            Self::NotAPackage => "not_a_package",
             Self::ManifestMissing => "manifest_missing",
             Self::ManifestInvalid => "manifest_invalid",
             Self::UnsupportedFeature => "unsupported_feature",
@@ -138,7 +143,7 @@ mod tests {
             let back: ErrorCode = serde_json::from_str(&json).unwrap();
             assert_eq!(back, *code);
         }
-        assert_eq!(seen.len(), 17);
+        assert_eq!(seen.len(), 18);
     }
 
     #[test]

@@ -173,6 +173,11 @@
           "const": "mpi_invalid"
         },
         {
+          "description": "The path exists but is not a package: a file that is neither a `.mpi` nor starts with the package's `BSA\\0`\nheader (the download archive, for example, which holds the `.mpi`).",
+          "type": "string",
+          "const": "not_a_package"
+        },
+        {
           "description": "The package has no manifest (`_package/index.json`).",
           "type": "string",
           "const": "manifest_missing"

@@ -69,6 +69,18 @@ pub const FEATURES: &[(&str, &str)] = &[
     ),
     ("audio_param:-f", "target sample rate in Hz"),
     ("audio_param:-q", "Ogg Vorbis quality, 0 to 10"),
+    (
+        "audio_param:-c",
+        "output channel count, 1 or 2 (mono and stereo convert into each other)",
+    ),
+    (
+        "audio_param:-fmt",
+        "output format (ogg, wav or mp3), checked against the target file's extension",
+    ),
+    (
+        "audio_param:-b",
+        "MP3 bit rate in kbit/s (8 to 320, the LAME rates)",
+    ),
     ("audio_format:ogg", "Ogg Vorbis output"),
     ("audio_format:wav", "WAV output"),
     ("audio_format:mp3", "MP3 output (LAME)"),

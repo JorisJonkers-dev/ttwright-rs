@@ -35,7 +35,7 @@ fn main() -> Result<()> {
     inputs.par_iter().try_for_each(|input| -> Result<()> {
         let source =
             std::fs::read(input).with_context(|| format!("failed to read {}", input.display()))?;
-        let processor = AudioProcessor::new().with_params("-f:24000 -q:5");
+        let processor = AudioProcessor::new().with_params("-f:24000 -q:5").unwrap();
         let output = processor
             .process_ogg_resample(&source)
             .with_context(|| format!("failed to convert {}", input.display()))?;
