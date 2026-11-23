@@ -6,6 +6,12 @@
       "description": "Cargo: keep caret requirements so the Components link together; exact versions live in Cargo.lock.",
       "matchManagers": ["cargo"],
       "rangeStrategy": "update-lockfile"
+    },
+    {
+      "description": "Cargo: keep cc below 1.9 for the Windows directxtex build.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["cc"],
+      "allowedVersions": "<1.9"
     }
   ]
 }
