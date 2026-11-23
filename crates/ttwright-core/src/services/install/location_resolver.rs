@@ -1,3 +1,4 @@
+use crate::app::DeclaredLocation;
 use crate::models::{InstallConfig, Location, Variable};
 use crate::services::runtime::Containment;
 use anyhow::{Context, Result, bail};
@@ -20,6 +21,9 @@ pub struct LocationResolver {
     config: InstallConfig,
     /// Variables read from manifest, keyed by name
     variables: HashMap<String, String>,
+    /// Declared source locations the caller bound with `--location NAME=PATH`, keyed by manifest index. A binding
+    /// can reach only the location preflight matched it to, never one with the same name.
+    bindings: HashMap<usize, PathBuf>,
     /// Everything written must stay inside the destination.
     containment: Containment,
 }
@@ -31,7 +35,22 @@ impl LocationResolver {
             locations,
             config,
             variables: HashMap::new(),
+            bindings: HashMap::new(),
         }
+    }
+
+    /// Use the folders the caller bound to declared source locations instead of the manifest's values. Preflight
+    /// has already matched each binding to one location; the index is what reaches it here, so another location
+    /// with the same name keeps its manifest value. A bound folder is only read from: writes still go through
+    /// [`Self::place`] and the destination's containment check.
+    #[must_use]
+    pub fn with_bindings(mut self, declared: &[DeclaredLocation]) -> Self {
+        for location in declared {
+            if let Some(path) = &location.bound_path {
+                self.bindings.insert(location.index, path.clone());
+            }
+        }
+        self
     }
 
     /// Create resolver with variables from manifest
@@ -109,6 +128,9 @@ impl LocationResolver {
         }
 
         let location = &self.locations[idx];
+        if let Some(path) = self.bindings.get(&idx) {
+            return Ok(path.clone());
+        }
         let value = location.value.as_deref().unwrap_or("");
         let resolved = self.resolve_variables(value);
 
@@ -389,8 +411,20 @@ fn is_windows_absolute_path(path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::LocationResolver;
+    use crate::app::DeclaredLocation;
     use crate::models::{InstallConfig, Location};
     use std::path::PathBuf;
+
+    fn declared(index: usize, name: &str, path: Option<PathBuf>) -> DeclaredLocation {
+        DeclaredLocation {
+            index,
+            name: name.to_owned(),
+            kind: 0,
+            required: true,
+            bound: path.is_some(),
+            bound_path: path,
+        }
+    }
 
     fn config() -> InstallConfig {
         InstallConfig {
@@ -453,6 +487,42 @@ mod tests {
         assert_eq!(
             resolver().resolve_path(1).unwrap(),
             PathBuf::from(r"C:\Steam\steamapps\common\Fallout New Vegas")
+        );
+    }
+
+    #[test]
+    fn a_bound_location_resolves_to_its_folder_instead_of_the_manifest_value() {
+        let dir = ttwright_testkit::TempDir::new("resolver-binding");
+        let resolved =
+            resolver().with_bindings(&[declared(0, "FO3 Root", Some(dir.path().to_path_buf()))]);
+        assert_eq!(resolved.resolve_path(0).unwrap(), dir.path());
+        // An unbound location still uses its manifest value.
+        assert_ne!(resolved.resolve_path(1).unwrap(), dir.path());
+    }
+
+    #[test]
+    fn a_binding_reaches_only_its_declared_index_not_another_location_with_the_same_name() {
+        let dir = ttwright_testkit::TempDir::new("resolver-duplicate-name");
+        let clone = Location {
+            name: Some("FO3 Root".to_owned()),
+            loc_type: 0,
+            value: Some(r"%FO3ROOT%\Data".to_owned()),
+            create_folder: None,
+            archive_type: None,
+            archive_flags: None,
+            files_flags: None,
+            archive_compressed: None,
+            extra: Default::default(),
+        };
+        let mut resolver = resolver();
+        resolver.locations.push(clone);
+        let resolved =
+            resolver.with_bindings(&[declared(0, "FO3 Root", Some(dir.path().to_path_buf()))]);
+        assert_eq!(resolved.resolve_path(0).unwrap(), dir.path());
+        assert_ne!(
+            resolved.resolve_path(3).unwrap(),
+            dir.path(),
+            "the game location with the same name keeps its manifest value"
         );
     }
 

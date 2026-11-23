@@ -11,7 +11,8 @@ use ttwright_contract::{
 };
 
 use crate::app::{
-    CancelToken, GameNeeds, InstallError, InstallEvent, Journal, check_manifest, classify,
+    CancelToken, DeclaredLocation, GameNeeds, InstallError, InstallEvent, Journal,
+    LocationBindings, check_bindings_outside_destination, check_manifest_with, classify,
 };
 use crate::models::{Check, InstallConfig};
 use crate::services::system_memory::SystemMemory;
@@ -32,6 +33,8 @@ pub struct InstallRequest {
     pub falloutnv_path: Option<PathBuf>,
     /// The Oblivion copy.
     pub oblivion_path: Option<PathBuf>,
+    /// Source locations declared by the package, as repeated `NAME=PATH` values.
+    pub location_bindings: Vec<String>,
     /// The destination folder.
     pub destination_path: PathBuf,
     /// Read and check everything, write nothing.
@@ -134,9 +137,15 @@ where
     log_requested_paths(request, emit);
     validate_request(request)?;
 
+    // Bindings are checked before the package is read or extracted: a folder inside --dest (or containing it)
+    // cannot be bound, so none of the package's files can be written into a source folder.
+    let bindings = LocationBindings::parse(&request.location_bindings)?;
+    check_bindings_outside_destination(&bindings, &request.destination_path)?;
     emit(InstallEvent::log("Loading MPI package..."));
     let (mpi_dir, cleanup_needed, mpi_store, mpi_index) = load_mpi_package(request, emit)?;
-    let result = install_from_package(request, emit, report, &mpi_dir, mpi_store, mpi_index);
+    let result = install_from_package(
+        request, emit, report, &mpi_dir, mpi_store, mpi_index, &bindings,
+    );
     if cleanup_needed {
         emit(InstallEvent::log("Cleaning up..."));
         if let Err(e) = MpiExtractor::cleanup_temp(&mpi_dir) {
@@ -155,6 +164,7 @@ fn install_from_package<F>(
     mpi_dir: &Path,
     mpi_store: Option<MpiStore>,
     mpi_index: Option<MpiPathIndex>,
+    bindings: &LocationBindings,
 ) -> Result<()>
 where
     F: Fn(InstallEvent) + Sync,
@@ -185,7 +195,8 @@ where
         package_name, package_version
     )));
 
-    // Preflight: nothing is written before the manifest's features, version and game copies are known good.
+    // Preflight: the manifest's features, version and game copies are known good before any of the package's
+    // files are written. The package itself has already been read into the destination's work folder.
     emit(InstallEvent::phase(Phase::Preflight));
     let assets = ManifestLoader::parse_assets(&manifest)?;
     report.assets.total = assets.len() as u64;
@@ -194,7 +205,10 @@ where
         "Using profile {}",
         profile_index
     )));
-    let needs = check_manifest(&manifest, &assets, profile_index)?;
+    // The bindings were parsed and checked against the destination before the package was read; preflight now
+    // matches each one to the declared location it may reach, before the journal is created.
+    let needs = check_manifest_with(&manifest, &assets, profile_index, bindings)?;
+    log_declared_locations(&needs.locations, emit);
     match ttw_version_support(&package_name, &package_version) {
         VersionSupport::Supported => report.package_supported = true,
         VersionSupport::NotTtw => report.package_supported = true,
@@ -216,7 +230,7 @@ where
             )));
         }
     }
-    let game_paths = resolve_game_paths(request, needs, emit)?;
+    let game_paths = resolve_game_paths(request, needs.games, emit)?;
     log_resolved_game_paths(&game_paths, emit);
 
     let locations = ManifestLoader::get_locations(&manifest, profile_index)?;
@@ -243,8 +257,8 @@ where
         mpi_package_path: mpi_dir.to_string_lossy().to_string(),
     };
 
-    // A cancel that arrives before anything is written (the package read, the preflight) ends the install here, so
-    // no journal and no destination folder is left behind and no resume is offered.
+    // A cancel that arrives before the install writes its output (the package read, the preflight) ends the
+    // install here, so no journal is left behind and no resume is offered.
     if request.cancel.is_cancelled() {
         return Err(InstallError::new(
             ErrorCode::Cancelled,
@@ -279,7 +293,9 @@ where
         resumed: report.resumed,
     }));
 
-    let resolver = LocationResolver::new(locations.clone(), config).with_variables(&variables);
+    let resolver = LocationResolver::new(locations.clone(), config)
+        .with_variables(&variables)
+        .with_bindings(&needs.locations);
 
     // The manifest's checks: the game copies must be the expected, unmodified ones.
     emit(InstallEvent::phase(Phase::Checks));
@@ -601,6 +617,41 @@ where
         "  Output: {}",
         request.destination_path.display()
     )));
+    if !request.location_bindings.is_empty() {
+        emit(InstallEvent::log("  Source locations:"));
+        for binding in &request.location_bindings {
+            emit(InstallEvent::log(format!("    {binding}")));
+        }
+    }
+}
+
+/// The source locations the package declares beyond the known games, and whether each is bound. Logged on the
+/// dry-run path too; TTW declares none, so its output is unchanged.
+fn log_declared_locations<F>(locations: &[DeclaredLocation], emit: &F)
+where
+    F: Fn(InstallEvent) + Sync,
+{
+    if locations.is_empty() {
+        return;
+    }
+    emit(InstallEvent::log("Declared source locations:"));
+    for location in locations {
+        let kind = match location.kind {
+            0 => "folder",
+            1 => "archive",
+            _ => "source",
+        };
+        let required = if location.required {
+            "required"
+        } else {
+            "optional"
+        };
+        let bound = if location.bound { "bound" } else { "unbound" };
+        emit(InstallEvent::log(format!(
+            "  {} ({kind}, {required}): {bound}",
+            location.name
+        )));
+    }
 }
 
 fn log_resolved_game_paths<F>(paths: &ResolvedGamePaths, emit: &F)

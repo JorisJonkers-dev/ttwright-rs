@@ -50,6 +50,8 @@ pub struct InstallJob {
     pub falloutnv_path: Option<PathBuf>,
     /// The Oblivion copy, when the package needs it.
     pub oblivion_path: Option<PathBuf>,
+    /// Source locations the package declares, each bound as `NAME=PATH`. Repeat for more than one location.
+    pub location_bindings: Vec<String>,
     /// The destination folder.
     pub destination_path: PathBuf,
     /// Read and check everything, write nothing.
@@ -241,6 +243,7 @@ pub fn install(
         fallout3_path: job.fallout3_path.clone(),
         falloutnv_path: job.falloutnv_path.clone(),
         oblivion_path: job.oblivion_path.clone(),
+        location_bindings: job.location_bindings.clone(),
         destination_path: job.destination_path.clone(),
         dry_run: job.dry_run,
         detect_missing: job.detect_missing,

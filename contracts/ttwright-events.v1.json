@@ -203,6 +203,11 @@
           "const": "game_path_missing"
         },
         {
+          "description": "The manifest needs a source location the caller did not bind with `--location NAME=PATH`; `feature` names it.",
+          "type": "string",
+          "const": "location_path_missing"
+        },
+        {
           "description": "A game copy that was given does not exist or is not that game.",
           "type": "string",
           "const": "game_not_found"

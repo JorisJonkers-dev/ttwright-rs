@@ -3,9 +3,9 @@
 
 use anyhow::{Result, bail};
 use std::path::Path;
-use ttwright_contract::{VersionSupport, ttw_version_support};
+use ttwright_contract::{ErrorCode, VersionSupport, ttw_version_support};
 use ttwright_core::{
-    app::{check_manifest, find_manifest},
+    app::{LocationBindings, find_manifest, inspect_manifest},
     services::{DetectedGame, GameDetection, Logger, ManifestLoader, MpiExtractor},
 };
 
@@ -37,8 +37,9 @@ pub(crate) fn run_extract(mpi_path: &Path, output: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn run_inspect(mpi_path: &Path, verbose: bool) -> Result<()> {
+pub(crate) fn run_inspect(mpi_path: &Path, verbose: bool, location: &[String]) -> Result<()> {
     println!("=== TTW MPI Inspector ===\n");
+    let bindings = LocationBindings::parse(location)?;
 
     // Handle MPI extraction if needed
     let (mpi_dir, cleanup_needed) = if MpiExtractor::is_mpi_file(mpi_path) {
@@ -68,11 +69,54 @@ pub(crate) fn run_inspect(mpi_path: &Path, verbose: bool) -> Result<()> {
     let assets = ManifestLoader::parse_assets(&manifest)?;
     println!("  Assets: {}", assets.len());
     let profile = ManifestLoader::select_best_profile(&manifest);
-    match check_manifest(&manifest, &assets, profile) {
-        Ok(needs) => println!(
-            "  Features: all supported (needs Fallout 3: {}, Fallout New Vegas: {}, Oblivion: {})",
-            needs.fallout3, needs.falloutnv, needs.oblivion
-        ),
+    match inspect_manifest(&manifest, &assets, profile, &bindings) {
+        Ok(needs) => {
+            println!(
+                "  Features: all supported (needs Fallout 3: {}, Fallout New Vegas: {}, Oblivion: {})",
+                needs.games.fallout3, needs.games.falloutnv, needs.games.oblivion
+            );
+            // Only a package with source locations beyond the known games gets this section, so TTW's output is
+            // unchanged.
+            if !needs.locations.is_empty() {
+                println!("\nDeclared source locations:");
+                for location in &needs.locations {
+                    let kind = match location.kind {
+                        0 => "folder",
+                        1 => "archive",
+                        _ => "source",
+                    };
+                    let required = if location.required {
+                        "required"
+                    } else {
+                        "optional"
+                    };
+                    let bound = if location.bound {
+                        format!(
+                            "bound to {}",
+                            bindings
+                                .get(&location.name)
+                                .map_or_else(|| "?".to_owned(), |p| p.display().to_string())
+                        )
+                    } else {
+                        "unbound".to_owned()
+                    };
+                    println!("  {} ({kind}, {required}): {bound}", location.name);
+                }
+                let missing: Vec<&str> = needs
+                    .locations
+                    .iter()
+                    .filter(|loc| loc.required && !loc.bound)
+                    .map(|loc| loc.name.as_str())
+                    .collect();
+                if !missing.is_empty() {
+                    println!(
+                        "  Missing {} (bind with --location NAME=PATH)",
+                        missing.join(", ")
+                    );
+                }
+            }
+        }
+        Err(e) if e.code == ErrorCode::Usage => bail!("{}", e.message),
         Err(e) => println!(
             "  Features: NOT supported, {} ({})",
             e.feature.as_deref().unwrap_or("?"),
