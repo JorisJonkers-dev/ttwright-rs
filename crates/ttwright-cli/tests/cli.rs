@@ -46,23 +46,33 @@ struct CustomFixture {
 }
 
 fn custom_package(label: &str) -> CustomFixture {
-    custom_package_with(label, false, None)
+    custom_package_with(label, false, None, "Texture Source")
 }
 
 fn custom_package_in_dest(label: &str) -> CustomFixture {
-    custom_package_with(label, false, Some("out/downloads/textures"))
+    custom_package_with(
+        label,
+        false,
+        Some("out/downloads/textures"),
+        "Texture Source",
+    )
+}
+
+fn custom_package_named(label: &str, name: &str) -> CustomFixture {
+    custom_package_with(label, false, None, name)
 }
 
 fn custom_package_with(
     label: &str,
     target_the_source: bool,
     source_relative: Option<&str>,
+    name: &str,
 ) -> CustomFixture {
     let dir = TempDir::new(label);
     let source = source_relative.map_or_else(|| dir.join("texture-source"), |p| dir.join(p));
     write(&source.join("textures/a.dds"), b"synthetic texture bytes");
     let mut m = Manifest::new("Synthetic Texture Pack", "1.0");
-    let from = m.location("Texture Source", 0, "%TEXTURE_SOURCE%");
+    let from = m.location(name, 0, "%TEXTURE_SOURCE%");
     let to = if target_the_source {
         from
     } else {
@@ -330,7 +340,7 @@ fn a_bound_source_location_installs_and_its_folder_is_only_read() {
 
 #[test]
 fn a_bound_source_folder_is_not_written_to_even_if_the_manifest_targets_it() {
-    let f = custom_package_with("cli-source-target", true, None);
+    let f = custom_package_with("cli-source-target", true, None, "Texture Source");
     let binding = format!("Texture Source={}", f.source.display());
     let out = ttwright(&custom_install_args(&f, &["--location", &binding]));
     let doc = json(&out);
@@ -367,7 +377,7 @@ fn an_unbound_required_source_location_names_itself_and_installs_no_files() {
     let message = doc["error"]["message"].as_str().unwrap();
     assert!(message.contains("Texture Source"), "{message}");
     assert!(
-        message.contains("--location \"Texture Source=PATH\""),
+        message.contains("--location 'Texture Source=PATH'"),
         "the hint is safe to copy into a shell: {message}"
     );
     assert!(
@@ -382,6 +392,37 @@ fn an_unbound_required_source_location_names_itself_and_installs_no_files() {
         std::fs::read_dir(&f.dest).unwrap().next().is_none(),
         "the destination holds no install output"
     );
+}
+
+#[test]
+fn an_unbound_location_hint_is_safe_to_paste_into_a_posix_shell() {
+    let cases = [
+        ("A\"; echo pwned; #", "--location 'A\"; echo pwned; #=PATH'"),
+        ("$(touch pwned)", "--location '$(touch pwned)=PATH'"),
+        ("`touch pwned`", "--location '`touch pwned`=PATH'"),
+        ("A;B", "--location 'A;B=PATH'"),
+        ("O'Brien", "--location 'O'\\''Brien=PATH'"),
+    ];
+    for (i, (name, fragment)) in cases.iter().enumerate() {
+        let f = custom_package_named(&format!("cli-hint-shell-{i}"), name);
+        let out = ttwright(&custom_install_args(&f, &[]));
+        assert_eq!(out.status.code(), Some(1));
+        let doc = json(&out);
+        assert_eq!(doc["error"]["code"], "location_path_missing");
+        let message = doc["error"]["message"].as_str().unwrap();
+        assert!(message.contains(fragment), "name {name:?}: {message}");
+    }
+}
+
+#[test]
+fn a_control_character_in_a_location_name_is_left_out_of_the_command() {
+    let f = custom_package_named("cli-hint-control", "Texture\nSource");
+    let out = ttwright(&custom_install_args(&f, &[]));
+    let doc = json(&out);
+    assert_eq!(doc["error"]["code"], "location_path_missing");
+    let message = doc["error"]["message"].as_str().unwrap();
+    assert!(message.contains("bind that location by hand"), "{message}");
+    assert!(!message.contains("--location"), "{message}");
 }
 
 #[test]
@@ -405,23 +446,38 @@ fn a_bound_folder_inside_the_destination_is_refused_before_any_install_output() 
 
 #[test]
 fn binding_a_known_game_location_is_a_usage_error_and_changes_no_output() {
-    let f = Fixture::new("cli-game-binding");
+    // A package may declare a source location whose value names a game copy even alongside another token.
+    // ttwright fills such a location itself: no binding may reach it, whatever the caller asks for. If this
+    // location were bindable, the binding below would be accepted and files would be written from `evil`.
+    let mut m = Fixture::manifest();
+    m.variable("EXTRA_FOLDER", 0, Some("extras"));
+    let game_alias = m.location("Game Data Alias", 0, "%FO3DATA%\\%EXTRA_FOLDER%");
+    m.asset(
+        0,
+        "",
+        game_alias,
+        loc::DEST,
+        "loose.txt",
+        Some("aliased.txt"),
+    );
+    let f = Fixture::with_manifest("cli-game-binding", &m);
     let evil = f.dir.join("evil-source");
     write(&evil.join("loose.txt"), b"attacker-supplied bytes");
-    let binding = format!("FO3 Data={}", evil.display());
+    let binding = format!("Game Data Alias={}", evil.display());
     let out = ttwright(&install_args(&f, &["--location", &binding]));
     let doc = json(&out);
     assert_eq!(out.status.code(), Some(2), "{doc}");
     assert_eq!(doc["error"]["code"], "usage");
-    assert!(
-        doc["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("FO3 Data")
-    );
+    let message = doc["error"]["message"].as_str().unwrap();
+    assert!(message.contains("Game Data Alias"), "{message}");
+    assert!(message.contains("fills itself"), "{message}");
     assert!(
         !f.dest.join("loose.txt").exists(),
         "no game file was replaced"
+    );
+    assert!(
+        !f.dest.join("aliased.txt").exists(),
+        "nothing was written from the bound folder"
     );
     assert!(!f.dest.join(".ttwright-journal.json").exists());
 }

@@ -241,8 +241,19 @@ fn with_hint(doc: &mut ResultDoc) {
         (ErrorCode::GamePathMissing, Some("fallout3")) => " (pass it with --fo3)".to_owned(),
         (ErrorCode::GamePathMissing, Some("falloutnv")) => " (pass it with --fnv)".to_owned(),
         (ErrorCode::GamePathMissing, Some("oblivion")) => " (pass it with --oblivion)".to_owned(),
+        // The name comes from the package manifest, so it may contain shell metacharacters. Single quotes make
+        // every byte literal to a POSIX shell, and a quote inside the name is written as `'\''`. A name with a
+        // control character cannot be shown in a copyable command: leave it out and ask the caller to bind it
+        // by hand instead.
         (ErrorCode::LocationPathMissing, Some(name)) => {
-            format!(" (bind it with --location \"{name}=PATH\")")
+            if name.chars().any(char::is_control) {
+                " (bind that location by hand: its name contains a control character)".to_owned()
+            } else {
+                format!(
+                    " (bind it with --location '{}=PATH')",
+                    name.replace('\'', "'\\''")
+                )
+            }
         }
         _ => String::new(),
     };
@@ -364,5 +375,72 @@ fn print_summary(doc: &ResultDoc) {
     println!("Total time: {}m {}s", seconds / 60, seconds % 60);
     if let Some(log) = &doc.log_file {
         println!("Log saved to: {log}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_hint;
+    use ttwright_contract::{ErrorCode, ResultDoc};
+
+    fn hint_for(name: &str) -> String {
+        let base = "The package needs source location";
+        let mut doc = ResultDoc::new("test");
+        doc.fail(ErrorCode::LocationPathMissing, base, Some(name.to_owned()));
+        with_hint(&mut doc);
+        doc.error
+            .expect("the error")
+            .message
+            .strip_prefix(base)
+            .expect("the base message")
+            .to_owned()
+    }
+
+    #[test]
+    fn a_location_hint_quotes_shell_metacharacters_for_pasting() {
+        let cases = [
+            (
+                "Texture Source",
+                " (bind it with --location 'Texture Source=PATH')",
+            ),
+            (
+                "A\"; echo pwned; #",
+                " (bind it with --location 'A\"; echo pwned; #=PATH')",
+            ),
+            (
+                "$(touch pwned)",
+                " (bind it with --location '$(touch pwned)=PATH')",
+            ),
+            (
+                "`touch pwned`",
+                " (bind it with --location '`touch pwned`=PATH')",
+            ),
+            ("A;B", " (bind it with --location 'A;B=PATH')"),
+            ("O'Brien", " (bind it with --location 'O'\\''Brien=PATH')"),
+        ];
+        for (name, expected) in cases {
+            assert_eq!(hint_for(name), expected, "name {name:?}");
+        }
+    }
+
+    #[test]
+    fn a_location_name_with_a_control_character_is_not_put_in_the_command() {
+        for name in [
+            "Texture\nSource",
+            "Texture\rSource",
+            "Texture\tSource",
+            "Texture\u{7}Source",
+        ] {
+            let hint = hint_for(name);
+            assert!(
+                hint.contains("bind that location by hand"),
+                "name {name:?}: {hint:?}"
+            );
+            assert!(!hint.contains("--location"), "name {name:?}: {hint:?}");
+            assert!(
+                !hint.chars().any(char::is_control),
+                "name {name:?}: {hint:?}"
+            );
+        }
     }
 }
