@@ -69,8 +69,8 @@ pub struct ErrorInfo {
     pub code: ErrorCode,
     /// Prose for people; never matched on.
     pub message: String,
-    /// For `unsupported_feature`, `unsupported_version` and `game_path_missing`: what is missing, for example
-    /// `asset_op:3` or `variable:%XYZ%`.
+    /// For `unsupported_feature`, `unsupported_version`, `game_path_missing` and `location_path_missing`: what is
+    /// missing, for example `asset_op:3`, `fallout3`, `variable:%XYZ%` or a location's `Name`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feature: Option<String>,
 }

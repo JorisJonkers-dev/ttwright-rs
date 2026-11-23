@@ -1,3 +1,4 @@
+use crate::app::LocationBindings;
 use crate::models::{InstallConfig, Location, Variable};
 use crate::services::runtime::Containment;
 use anyhow::{Context, Result, bail};
@@ -20,6 +21,8 @@ pub struct LocationResolver {
     config: InstallConfig,
     /// Variables read from manifest, keyed by name
     variables: HashMap<String, String>,
+    /// Source locations the caller bound with `--location NAME=PATH`, keyed by name without case.
+    bindings: HashMap<String, PathBuf>,
     /// Everything written must stay inside the destination.
     containment: Containment,
 }
@@ -31,7 +34,19 @@ impl LocationResolver {
             locations,
             config,
             variables: HashMap::new(),
+            bindings: HashMap::new(),
         }
+    }
+
+    /// Use the folders the caller bound to declared source locations instead of the manifest's values. A bound
+    /// folder is only read from: writes still go through [`Self::place`] and the destination's containment check.
+    #[must_use]
+    pub fn with_bindings(mut self, bindings: &LocationBindings) -> Self {
+        for binding in bindings.iter() {
+            self.bindings
+                .insert(binding.name.to_ascii_lowercase(), binding.path.clone());
+        }
+        self
     }
 
     /// Create resolver with variables from manifest
@@ -109,6 +124,13 @@ impl LocationResolver {
         }
 
         let location = &self.locations[idx];
+        if let Some(path) = location
+            .name
+            .as_deref()
+            .and_then(|name| self.bindings.get(&name.to_ascii_lowercase()))
+        {
+            return Ok(path.clone());
+        }
         let value = location.value.as_deref().unwrap_or("");
         let resolved = self.resolve_variables(value);
 
@@ -454,6 +476,17 @@ mod tests {
             resolver().resolve_path(1).unwrap(),
             PathBuf::from(r"C:\Steam\steamapps\common\Fallout New Vegas")
         );
+    }
+
+    #[test]
+    fn a_bound_location_resolves_to_its_folder_instead_of_the_manifest_value() {
+        let dir = ttwright_testkit::TempDir::new("resolver-binding");
+        let given = dir.path().to_string_lossy().to_string();
+        let bindings = crate::app::LocationBindings::parse(&[format!("FO3 Root={given}")]).unwrap();
+        let resolved = resolver().with_bindings(&bindings);
+        assert_eq!(resolved.resolve_path(0).unwrap(), dir.path());
+        // An unbound location still uses its manifest value.
+        assert_ne!(resolved.resolve_path(1).unwrap(), dir.path());
     }
 
     #[cfg(not(windows))]

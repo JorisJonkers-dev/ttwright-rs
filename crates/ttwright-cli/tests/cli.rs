@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The `ttwright` binary as the Toolbox runs it: Contracts, schemas, exit codes and JSON output.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use serde_json::Value;
 use ttwright_contract::{DocumentKind, ErrorCode, Status, check, schema_file_name, schema_json};
-use ttwright_testkit::{Fixture, loc};
+use ttwright_testkit::{Fixture, Manifest, TempDir, loc, mpi_package, write};
 
 fn ttwright(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_ttwright"))
@@ -30,6 +30,54 @@ fn install_args<'a>(f: &'a Fixture, extra: &[&'a str]) -> Vec<&'a str> {
         f.mpi.to_str().unwrap(),
         "--fo3",
         f.fallout3.to_str().unwrap(),
+        "--dest",
+        f.dest.to_str().unwrap(),
+    ];
+    args.extend_from_slice(extra);
+    args
+}
+
+/// A synthetic MPI built in the test: one source location the installer cannot resolve on its own.
+struct CustomFixture {
+    _dir: TempDir,
+    mpi: PathBuf,
+    source: PathBuf,
+    dest: PathBuf,
+}
+
+fn custom_package(label: &str) -> CustomFixture {
+    custom_package_with(label, false)
+}
+
+fn custom_package_with(label: &str, target_the_source: bool) -> CustomFixture {
+    let dir = TempDir::new(label);
+    let source = dir.join("texture-source");
+    write(&source.join("textures/a.dds"), b"synthetic texture bytes");
+    let mut m = Manifest::new("Synthetic Texture Pack", "1.0");
+    let from = m.location("Texture Source", 0, "%TEXTURE_SOURCE%");
+    let to = if target_the_source {
+        from
+    } else {
+        m.location("Destination", 0, "%DESTINATION%")
+    };
+    m.asset(0, "", from, to, "textures\\a.dds", None);
+    let mpi = dir.join("Synthetic.mpi");
+    write(&mpi, &mpi_package(&m.build(), &[]));
+    let dest = dir.join("out");
+    CustomFixture {
+        _dir: dir,
+        mpi,
+        source,
+        dest,
+    }
+}
+
+fn custom_install_args<'a>(f: &'a CustomFixture, extra: &[&'a str]) -> Vec<&'a str> {
+    let mut args = vec![
+        "install",
+        "--json",
+        "--mpi",
+        f.mpi.to_str().unwrap(),
         "--dest",
         f.dest.to_str().unwrap(),
     ];
@@ -244,4 +292,127 @@ fn people_get_a_summary_and_inspect_reports_support() {
     ]);
     assert_eq!(out.status.code(), Some(3));
     assert!(String::from_utf8_lossy(&out.stdout).contains("Missing: post_command:copy"));
+}
+
+#[test]
+fn a_bound_source_location_installs_and_its_folder_is_only_read() {
+    let f = custom_package("cli-bound-location");
+    let binding = format!("Texture Source={}", f.source.display());
+    let out = ttwright(&custom_install_args(&f, &["--location", &binding]));
+    let doc = json(&out);
+    assert_eq!(out.status.code(), Some(0), "{doc}");
+    assert_eq!(doc["status"], "success");
+    assert_eq!(doc["assets"]["done"], 1);
+    assert_eq!(
+        std::fs::read(f.dest.join("textures/a.dds")).unwrap(),
+        b"synthetic texture bytes"
+    );
+    // The source folder is read from, never written to.
+    assert_eq!(
+        std::fs::read(f.source.join("textures/a.dds")).unwrap(),
+        b"synthetic texture bytes"
+    );
+    assert_eq!(
+        std::fs::read_dir(f.source.join("textures"))
+            .unwrap()
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn a_bound_source_folder_is_not_written_to_even_if_the_manifest_targets_it() {
+    let f = custom_package_with("cli-source-target", true);
+    let binding = format!("Texture Source={}", f.source.display());
+    let out = ttwright(&custom_install_args(&f, &["--location", &binding]));
+    let doc = json(&out);
+    assert_eq!(out.status.code(), Some(0), "{doc}");
+    assert_eq!(
+        std::fs::read(f.source.join("textures/a.dds")).unwrap(),
+        b"synthetic texture bytes",
+        "the source file was not overwritten"
+    );
+    assert_eq!(
+        std::fs::read_dir(f.source.join("textures"))
+            .unwrap()
+            .count(),
+        1,
+        "nothing was added to the source folder"
+    );
+    assert!(
+        f.dest
+            .join("_ttwright_game_root/Texture_Source/textures/a.dds")
+            .is_file(),
+        "the write was redirected into the destination"
+    );
+}
+
+#[test]
+fn an_unbound_required_source_location_names_itself_before_anything_is_written() {
+    let f = custom_package("cli-unbound-location");
+    let out = ttwright(&custom_install_args(&f, &[]));
+    assert_eq!(out.status.code(), Some(1));
+    let doc = json(&out);
+    check(DocumentKind::Result, &doc).unwrap();
+    assert_eq!(doc["error"]["code"], "location_path_missing");
+    assert_eq!(doc["error"]["feature"], "Texture Source");
+    let message = doc["error"]["message"].as_str().unwrap();
+    assert!(message.contains("Texture Source"), "{message}");
+    assert!(
+        !f.dest.join("textures/a.dds").exists(),
+        "no asset was written"
+    );
+    assert!(
+        !f.dest.join(".ttwright-journal.json").exists(),
+        "no journal was written"
+    );
+}
+
+#[test]
+fn an_unknown_location_name_is_a_usage_error() {
+    let f = custom_package("cli-unknown-location");
+    let binding = format!("No Such Location={}", f.source.display());
+    let out = ttwright(&custom_install_args(&f, &["--location", &binding]));
+    assert_eq!(out.status.code(), Some(2));
+    let doc = json(&out);
+    assert_eq!(doc["error"]["code"], "usage");
+    assert!(
+        doc["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("No Such Location")
+    );
+    assert!(!f.dest.join(".ttwright-journal.json").exists());
+}
+
+#[test]
+fn inspect_lists_declared_source_locations_and_whether_they_are_bound() {
+    let f = custom_package("cli-inspect-locations");
+    let unbound = ttwright(&["inspect", "--mpi", f.mpi.to_str().unwrap()]);
+    let text = String::from_utf8_lossy(&unbound.stdout);
+    assert!(unbound.status.success(), "{text}");
+    assert!(text.contains("Declared source locations:"), "{text}");
+    assert!(text.contains("Texture Source"), "{text}");
+    assert!(text.contains("required"), "{text}");
+    assert!(text.contains("unbound"), "{text}");
+
+    let binding = format!("texture source={}", f.source.display());
+    let bound = ttwright(&[
+        "inspect",
+        "--mpi",
+        f.mpi.to_str().unwrap(),
+        "--location",
+        &binding,
+    ]);
+    let text = String::from_utf8_lossy(&bound.stdout);
+    assert!(bound.status.success(), "{text}");
+    assert!(text.contains("bound to"), "{text}");
+    assert!(text.contains(f.source.to_str().unwrap()), "{text}");
+
+    // TTW declares no such locations: its inspect output has no new section.
+    let ttw = Fixture::new("cli-inspect-ttw");
+    let out = ttwright(&["inspect", "--mpi", ttw.mpi.to_str().unwrap()]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}");
+    assert!(!text.contains("Declared source locations:"), "{text}");
 }

@@ -32,6 +32,8 @@ pub enum ErrorCode {
     UnsupportedVersion,
     /// The manifest needs a game copy that was not given (`--fo3`, `--fnv`, `--oblivion`); `feature` names it.
     GamePathMissing,
+    /// The manifest needs a source location the caller did not bind with `--location NAME=PATH`; `feature` names it.
+    LocationPathMissing,
     /// A game copy that was given does not exist or is not that game.
     GameNotFound,
     /// A pre-installation check of the manifest failed (missing or modified game file, too little space).
@@ -65,6 +67,7 @@ impl ErrorCode {
         Self::UnsupportedFeature,
         Self::UnsupportedVersion,
         Self::GamePathMissing,
+        Self::LocationPathMissing,
         Self::GameNotFound,
         Self::CheckFailed,
         Self::AssetFailed,
@@ -89,6 +92,7 @@ impl ErrorCode {
             Self::UnsupportedFeature => "unsupported_feature",
             Self::UnsupportedVersion => "unsupported_version",
             Self::GamePathMissing => "game_path_missing",
+            Self::LocationPathMissing => "location_path_missing",
             Self::GameNotFound => "game_not_found",
             Self::CheckFailed => "check_failed",
             Self::AssetFailed => "asset_failed",
@@ -143,7 +147,7 @@ mod tests {
             let back: ErrorCode = serde_json::from_str(&json).unwrap();
             assert_eq!(back, *code);
         }
-        assert_eq!(seen.len(), 18);
+        assert_eq!(seen.len(), ErrorCode::ALL.len());
     }
 
     #[test]

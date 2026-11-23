@@ -65,6 +65,9 @@ enum Commands {
         /// Path to MPI file or extracted directory
         #[arg(short, long)]
         mpi: PathBuf,
+        /// Bind a source location declared by the package: NAME=PATH (repeatable)
+        #[arg(long = "location", value_name = "NAME=PATH")]
+        location: Vec<String>,
         /// Show detailed asset information
         #[arg(long, default_value = "false")]
         verbose: bool,
@@ -109,6 +112,9 @@ struct InstallArgs {
     /// Oblivion installation directory
     #[arg(long)]
     oblivion: Option<PathBuf>,
+    /// Bind a source location declared by the package: NAME=PATH (repeatable)
+    #[arg(long = "location", value_name = "NAME=PATH")]
+    location: Vec<String>,
     /// Destination directory for installation output
     #[arg(short, long)]
     dest: PathBuf,
@@ -185,7 +191,11 @@ fn main() -> ExitCode {
             }
         }
         Commands::Extract { mpi, output } => commands::run_extract(&mpi, &output),
-        Commands::Inspect { mpi, verbose } => commands::run_inspect(&mpi, verbose),
+        Commands::Inspect {
+            mpi,
+            location,
+            verbose,
+        } => commands::run_inspect(&mpi, verbose, &location),
         Commands::Verify { fo3, fnv, oblivion } => {
             commands::run_verify(fo3.as_deref(), fnv.as_deref(), oblivion.as_deref())
         }
@@ -227,13 +237,16 @@ impl Progress for Events {
 fn with_hint(doc: &mut ResultDoc) {
     let Some(error) = &mut doc.error else { return };
     let hint = match (error.code, error.feature.as_deref()) {
-        (ErrorCode::Cancelled, _) => " (run it again with --resume)",
-        (ErrorCode::GamePathMissing, Some("fallout3")) => " (pass it with --fo3)",
-        (ErrorCode::GamePathMissing, Some("falloutnv")) => " (pass it with --fnv)",
-        (ErrorCode::GamePathMissing, Some("oblivion")) => " (pass it with --oblivion)",
-        _ => "",
+        (ErrorCode::Cancelled, _) => " (run it again with --resume)".to_owned(),
+        (ErrorCode::GamePathMissing, Some("fallout3")) => " (pass it with --fo3)".to_owned(),
+        (ErrorCode::GamePathMissing, Some("falloutnv")) => " (pass it with --fnv)".to_owned(),
+        (ErrorCode::GamePathMissing, Some("oblivion")) => " (pass it with --oblivion)".to_owned(),
+        (ErrorCode::LocationPathMissing, Some(name)) => {
+            format!(" (bind it with --location {name}=PATH)")
+        }
+        _ => String::new(),
     };
-    error.message.push_str(hint);
+    error.message.push_str(&hint);
 }
 
 fn install(args: &InstallArgs) -> ExitCode {
@@ -283,6 +296,7 @@ fn install(args: &InstallArgs) -> ExitCode {
         fallout3_path: args.fo3.clone(),
         falloutnv_path: args.fnv.clone(),
         oblivion_path: args.oblivion.clone(),
+        location_bindings: args.location.clone(),
         destination_path: args.dest.clone(),
         dry_run: args.dry_run,
         detect_missing: !args.no_detect && (args.detect || !args.json),

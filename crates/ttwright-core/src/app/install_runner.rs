@@ -11,7 +11,8 @@ use ttwright_contract::{
 };
 
 use crate::app::{
-    CancelToken, GameNeeds, InstallError, InstallEvent, Journal, check_manifest, classify,
+    CancelToken, DeclaredLocation, GameNeeds, InstallError, InstallEvent, Journal,
+    LocationBindings, check_manifest_with, classify,
 };
 use crate::models::{Check, InstallConfig};
 use crate::services::system_memory::SystemMemory;
@@ -32,6 +33,8 @@ pub struct InstallRequest {
     pub falloutnv_path: Option<PathBuf>,
     /// The Oblivion copy.
     pub oblivion_path: Option<PathBuf>,
+    /// Source locations declared by the package, as repeated `NAME=PATH` values.
+    pub location_bindings: Vec<String>,
     /// The destination folder.
     pub destination_path: PathBuf,
     /// Read and check everything, write nothing.
@@ -194,7 +197,11 @@ where
         "Using profile {}",
         profile_index
     )));
-    let needs = check_manifest(&manifest, &assets, profile_index)?;
+    // The bindings are parsed and checked against the declared locations during preflight, before the journal
+    // and the destination folder are created.
+    let bindings = LocationBindings::parse(&request.location_bindings)?;
+    let needs = check_manifest_with(&manifest, &assets, profile_index, &bindings)?;
+    log_declared_locations(&needs.locations, emit);
     match ttw_version_support(&package_name, &package_version) {
         VersionSupport::Supported => report.package_supported = true,
         VersionSupport::NotTtw => report.package_supported = true,
@@ -216,7 +223,7 @@ where
             )));
         }
     }
-    let game_paths = resolve_game_paths(request, needs, emit)?;
+    let game_paths = resolve_game_paths(request, needs.games, emit)?;
     log_resolved_game_paths(&game_paths, emit);
 
     let locations = ManifestLoader::get_locations(&manifest, profile_index)?;
@@ -279,7 +286,9 @@ where
         resumed: report.resumed,
     }));
 
-    let resolver = LocationResolver::new(locations.clone(), config).with_variables(&variables);
+    let resolver = LocationResolver::new(locations.clone(), config)
+        .with_variables(&variables)
+        .with_bindings(&bindings);
 
     // The manifest's checks: the game copies must be the expected, unmodified ones.
     emit(InstallEvent::phase(Phase::Checks));
@@ -601,6 +610,41 @@ where
         "  Output: {}",
         request.destination_path.display()
     )));
+    if !request.location_bindings.is_empty() {
+        emit(InstallEvent::log("  Source locations:"));
+        for binding in &request.location_bindings {
+            emit(InstallEvent::log(format!("    {binding}")));
+        }
+    }
+}
+
+/// The source locations the package declares beyond the known games, and whether each is bound. Logged on the
+/// dry-run path too; TTW declares none, so its output is unchanged.
+fn log_declared_locations<F>(locations: &[DeclaredLocation], emit: &F)
+where
+    F: Fn(InstallEvent) + Sync,
+{
+    if locations.is_empty() {
+        return;
+    }
+    emit(InstallEvent::log("Declared source locations:"));
+    for location in locations {
+        let kind = match location.kind {
+            0 => "folder",
+            1 => "archive",
+            _ => "source",
+        };
+        let required = if location.required {
+            "required"
+        } else {
+            "optional"
+        };
+        let bound = if location.bound { "bound" } else { "unbound" };
+        emit(InstallEvent::log(format!(
+            "  {} ({kind}, {required}): {bound}",
+            location.name
+        )));
+    }
 }
 
 fn log_resolved_game_paths<F>(paths: &ResolvedGamePaths, emit: &F)

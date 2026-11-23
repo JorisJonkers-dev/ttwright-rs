@@ -221,6 +221,11 @@
           "const": "game_path_missing"
         },
         {
+          "description": "The manifest needs a source location the caller did not bind with `--location NAME=PATH`; `feature` names it.",
+          "type": "string",
+          "const": "location_path_missing"
+        },
+        {
           "description": "A game copy that was given does not exist or is not that game.",
           "type": "string",
           "const": "game_not_found"
@@ -276,7 +281,7 @@
           "$ref": "#/$defs/ErrorCode"
         },
         "feature": {
-          "description": "For `unsupported_feature`, `unsupported_version` and `game_path_missing`: what is missing, for example\n`asset_op:3` or `variable:%XYZ%`.",
+          "description": "For `unsupported_feature`, `unsupported_version`, `game_path_missing` and `location_path_missing`: what is\nmissing, for example `asset_op:3`, `fallout3`, `variable:%XYZ%` or a location's `Name`.",
           "type": [
             "string",
             "null"

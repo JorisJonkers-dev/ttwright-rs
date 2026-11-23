@@ -59,6 +59,10 @@ To republish an existing tag, for example after the package was renamed, run the
 # Install
 ttwright install --mpi /path/to/TTW.mpi --fo3 /path/to/Fallout3 --fnv /path/to/FalloutNV --dest /path/to/output
 
+# Bind a source location declared by the package (repeat for more locations)
+ttwright install --mpi /path/to/other.mpi --dest /path/to/output \
+  --location "TEXTURE SOURCE=/path/to/downloaded/textures"
+
 # Continue an install that was cancelled (Ctrl+C) or interrupted
 ttwright install --resume --mpi ... --dest /path/to/output
 
@@ -71,6 +75,16 @@ ttwright --help
 ```
 
 Without `--json`, game copies you leave out are looked for in Steam libraries (`--no-detect` turns that off).
+
+An MPI manifest declares its source folders in `Locations` (an array per profile, each entry with a `Name`, a `Type`
+and a `Value`). Most point at a game copy through a variable such as `%FO3DATA%`. A package may also declare a
+location with a value ttwright cannot fill itself (an unrecognised variable token, or no value at all): that
+location is bindable. `ttwright inspect --mpi ...` lists those declared source locations, marks each required or
+optional and says whether it is bound; `--location NAME=PATH` on `inspect` shows the effect without writing
+anything. On install, repeat `--location NAME=PATH` for every required location. Names are matched without regard
+to case. An unbound required location stops the install before anything is written with `location_path_missing`,
+naming the location. Bound folders (and archives) are read only: ttwright writes only inside `--dest`, redirecting
+anything the manifest aimed outside it.
 
 ### Driven by the Toolbox
 
@@ -87,7 +101,7 @@ Without `--json`, game copies you leave out are looked for in Steam libraries (`
 | 4 | `cancelled` | cancelled; `--resume` continues |
 
 The error codes are stable: `usage`, `mpi_not_found`, `mpi_invalid`, `not_a_package`, `manifest_missing`, `manifest_invalid`,
-`unsupported_feature`, `unsupported_version`, `game_path_missing`, `game_not_found`, `check_failed`,
+`unsupported_feature`, `unsupported_version`, `game_path_missing`, `location_path_missing`, `game_not_found`, `check_failed`,
 `asset_failed`, `archive_failed`, `post_command_failed`, `resume_mismatch`, `cancelled`, `io`, `internal`.
 
 ttwright never writes outside the destination. A file the manifest meant for a place outside it (the real TTW

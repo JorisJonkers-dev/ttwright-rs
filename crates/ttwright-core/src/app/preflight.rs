@@ -9,9 +9,32 @@ use std::path::Path;
 use serde_json::{Map, Value};
 use ttwright_contract::{ErrorCode, is_supported};
 
-use crate::app::InstallError;
-use crate::models::{Asset, TtwManifest};
+use crate::app::{InstallError, LocationBindings};
+use crate::models::{Asset, Location, TtwManifest, Variable};
 use crate::services::{AudioFormat, AudioProcessor};
+
+/// A source location the package declares with a value ttwright cannot fill itself. It is bindable with
+/// `--location NAME=PATH`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredLocation {
+    /// The name in the manifest, matched by `--location` without regard to case.
+    pub name: String,
+    /// `0` for a folder read from, `1` for an archive read from.
+    pub kind: i32,
+    /// An asset reads from it or a check uses it, so it must be bound before the install writes anything.
+    pub required: bool,
+    /// The caller gave a binding for this location.
+    pub bound: bool,
+}
+
+/// What a manifest needs from the caller: game copies and bindable source locations.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ManifestNeeds {
+    /// The game copies named by built-in variables.
+    pub games: GameNeeds,
+    /// The source locations the package declares beyond the known games.
+    pub locations: Vec<DeclaredLocation>,
+}
 
 /// The game copies a manifest needs, from the variables its locations use.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -109,7 +132,7 @@ pub fn post_command_verb(command: &str) -> String {
 }
 
 /// Check every feature the manifest uses with `profile` and the parsed `assets`, and say which game copies it
-/// needs.
+/// needs. Equivalent to [`check_manifest_with`] with no bindings.
 ///
 /// # Errors
 /// `unsupported_feature` naming the first unsupported feature, or `manifest_invalid` for an asset that points at
@@ -119,6 +142,48 @@ pub fn check_manifest(
     assets: &[Asset],
     profile: usize,
 ) -> Result<GameNeeds, InstallError> {
+    check_manifest_with(manifest, assets, profile, &LocationBindings::default())
+        .map(|needs| needs.games)
+}
+
+/// Check the manifest with the caller's `bindings`, and report both the game copies and the declared source
+/// locations it needs. A bound location's value is replaced by its binding, so the tokens in that value are not
+/// checked; a required location with no binding stops the install with `location_path_missing` before anything is
+/// written.
+///
+/// # Errors
+/// `unsupported_feature` naming the first unsupported feature, `location_path_missing` naming an unbound required
+/// location, `usage` for a binding of a name the package does not declare, or `manifest_invalid` for a bad reference.
+pub fn check_manifest_with(
+    manifest: &TtwManifest,
+    assets: &[Asset],
+    profile: usize,
+    bindings: &LocationBindings,
+) -> Result<ManifestNeeds, InstallError> {
+    check_manifest_inner(manifest, assets, profile, bindings, true)
+}
+
+/// The checks `inspect` makes: like [`check_manifest_with`], but an unbound required location is reported in
+/// [`ManifestNeeds::locations`] instead of stopping the inspection.
+///
+/// # Errors
+/// The same errors as [`check_manifest_with`] apart from `location_path_missing`.
+pub fn inspect_manifest(
+    manifest: &TtwManifest,
+    assets: &[Asset],
+    profile: usize,
+    bindings: &LocationBindings,
+) -> Result<ManifestNeeds, InstallError> {
+    check_manifest_inner(manifest, assets, profile, bindings, false)
+}
+
+fn check_manifest_inner(
+    manifest: &TtwManifest,
+    assets: &[Asset],
+    profile: usize,
+    bindings: &LocationBindings,
+    require_bindings: bool,
+) -> Result<ManifestNeeds, InstallError> {
     no_extra(&manifest.extra, "manifest")?;
     for key in [
         "Package",
@@ -262,13 +327,65 @@ pub fn check_manifest(
         .chain(manifest.checks.iter().flatten().map(|c| c.loc))
         .filter_map(|i| usize::try_from(i).ok())
         .collect();
+    // Source locations whose value ttwright cannot fill itself are declared to the caller, who supplies them with
+    // `--location NAME=PATH`. Only the ones an asset or a check reads must be bound.
+    let mut declared = Vec::new();
+    let mut declared_indices = BTreeSet::new();
+    for (i, location) in locations.iter().enumerate() {
+        if !matches!(location.loc_type, 0 | 1) {
+            continue;
+        }
+        let Some(name) = location
+            .name
+            .as_deref()
+            .filter(|name| !name.trim().is_empty())
+        else {
+            continue;
+        };
+        if needs_binding(location, &variables) {
+            declared.push(DeclaredLocation {
+                name: name.to_owned(),
+                kind: location.loc_type,
+                required: used.contains(&i),
+                bound: bindings.get(name).is_some(),
+            });
+            declared_indices.insert(i);
+        }
+    }
+    for binding in bindings.iter() {
+        if !declared
+            .iter()
+            .any(|loc| loc.name.eq_ignore_ascii_case(&binding.name))
+        {
+            return Err(InstallError::new(
+                ErrorCode::Usage,
+                format!(
+                    "--location {} does not name a source location declared by this package",
+                    binding.name
+                ),
+            ));
+        }
+    }
+    for loc in &declared {
+        if require_bindings && loc.required && !loc.bound {
+            return Err(InstallError::new(
+                ErrorCode::LocationPathMissing,
+                format!(
+                    "The package needs source location {}, but no folder was bound to it",
+                    loc.name
+                ),
+            )
+            .with_feature(loc.name.clone()));
+        }
+    }
+
     let mut needs = GameNeeds::default();
     for lenient in [false, true] {
         let mut seen = BTreeSet::new();
         let mut pending: Vec<String> = locations
             .iter()
             .enumerate()
-            .filter(|(i, _)| used.contains(i) != lenient)
+            .filter(|(i, _)| used.contains(i) != lenient && !declared_indices.contains(i))
             .flat_map(|(_, l)| variable_tokens(l.value.as_deref().unwrap_or_default()))
             .collect();
         while let Some(token) = pending.pop() {
@@ -304,7 +421,44 @@ pub fn check_manifest(
             }
         }
     }
-    Ok(needs)
+    Ok(ManifestNeeds {
+        games: needs,
+        locations: declared,
+    })
+}
+
+/// Whether a source location's value needs something from the caller. A token ttwright can fill from a built-in
+/// variable or from a manifest string variable does not; a token from a personal-folder variable is supplied by
+/// the operating system and is not a bindable location either.
+fn needs_binding(location: &Location, variables: &[Variable]) -> bool {
+    let value = location.value.as_deref().unwrap_or_default();
+    if value.trim().is_empty() {
+        return true;
+    }
+    let mut pending = variable_tokens(value);
+    let mut seen = BTreeSet::new();
+    while let Some(token) = pending.pop() {
+        if !seen.insert(token.clone()) {
+            continue;
+        }
+        if BUILTIN.iter().any(|(name, _)| *name == token) {
+            continue;
+        }
+        match variables.iter().find(|v| {
+            v.name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case(&token))
+        }) {
+            Some(v)
+                if v.var_type == 0 && v.value.as_deref().is_some_and(|v| !v.trim().is_empty()) =>
+            {
+                pending.extend(variable_tokens(v.value.as_deref().unwrap_or_default()));
+            }
+            Some(v) if matches!(v.var_type, 1 | 2) => {}
+            _ => return true,
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -325,6 +479,22 @@ mod tests {
         let e = run(m).unwrap_err();
         assert_eq!(e.code, ErrorCode::UnsupportedFeature, "{e}");
         e.feature.unwrap()
+    }
+
+    fn run_with(m: &Manifest, bindings: &LocationBindings) -> Result<ManifestNeeds, InstallError> {
+        let manifest =
+            ManifestLoader::load_from_bytes(&serde_json::to_vec(&m.build()).unwrap()).unwrap();
+        let assets = ManifestLoader::parse_assets(&manifest).unwrap();
+        check_manifest_with(&manifest, &assets, 0, bindings)
+    }
+
+    /// A package with one required source location the installer cannot resolve on its own.
+    fn custom() -> Manifest {
+        let mut m = Manifest::new("Synthetic Textures", "1.0");
+        let source = m.location("Texture Archive", 0, "%TEXTURE_SOURCE%");
+        let dest = m.location("Destination", 0, "%DESTINATION%");
+        m.asset(0, "", source, dest, "a.dds", None);
+        m
     }
 
     fn base() -> Manifest {
@@ -441,7 +611,17 @@ mod tests {
     fn variables_must_resolve() {
         let mut m = base();
         m.location("Odd", 0, "%NOWHERE%\\x");
-        assert_eq!(feature(&m), "variable:%NOWHERE%");
+        let needs = run_with(&m, &LocationBindings::default()).unwrap();
+        assert_eq!(
+            needs.locations,
+            [DeclaredLocation {
+                name: "Odd".to_owned(),
+                kind: 0,
+                required: false,
+                bound: false,
+            }],
+            "an unrecognised token in an unused location is reported, not refused"
+        );
         let mut m = base();
         m.variable("DOCS", 1, None);
         assert!(
@@ -455,12 +635,61 @@ mod tests {
         let mut m = base();
         m.variable("GAMEKEY", 4, Some("HKLM\\x"));
         m.location("Reg", 0, "%GAMEKEY%");
-        assert_eq!(feature(&m), "variable:%GAMEKEY%");
+        let needs = run_with(&m, &LocationBindings::default()).unwrap();
+        assert_eq!(needs.locations[0].name, "Reg");
         let mut m = base();
         m.location("NV", 1, "%FNVDATA%\\Synthetic.bsa");
         m.location("Ob", 0, "%oblivionroot%");
         let needs = run(&m).unwrap();
         assert!(needs.fallout3 && needs.falloutnv && needs.oblivion);
+    }
+
+    #[test]
+    fn a_required_declared_location_must_be_bound_before_the_install_writes_anything() {
+        let m = custom();
+        let unbound = run_with(&m, &LocationBindings::default()).unwrap_err();
+        assert_eq!(unbound.code, ErrorCode::LocationPathMissing);
+        assert_eq!(unbound.feature.as_deref(), Some("Texture Archive"));
+        assert!(unbound.message.contains("Texture Archive"));
+
+        let dir = ttwright_testkit::TempDir::new("preflight-binding");
+        let given = dir.path().to_string_lossy().to_string();
+        let bindings = LocationBindings::parse(&[format!("texture archive={given}")]).unwrap();
+        let needs = run_with(&m, &bindings).unwrap();
+        assert_eq!(
+            needs.locations,
+            [DeclaredLocation {
+                name: "Texture Archive".to_owned(),
+                kind: 0,
+                required: true,
+                bound: true,
+            }]
+        );
+        assert!(!needs.games.fallout3, "the binding replaces the game token");
+    }
+
+    #[test]
+    fn a_location_waiting_for_an_empty_manifest_variable_can_be_bound() {
+        let mut m = custom();
+        m.variable("TEXTURE_SOURCE", 0, Some(""));
+        let unbound = run_with(&m, &LocationBindings::default()).unwrap_err();
+        assert_eq!(unbound.code, ErrorCode::LocationPathMissing);
+        assert_eq!(unbound.feature.as_deref(), Some("Texture Archive"));
+
+        let dir = ttwright_testkit::TempDir::new("preflight-empty-variable");
+        let given = dir.path().to_string_lossy().to_string();
+        let bindings = LocationBindings::parse(&[format!("Texture Archive={given}")]).unwrap();
+        assert!(run_with(&m, &bindings).is_ok());
+    }
+
+    #[test]
+    fn a_binding_of_an_undeclared_location_is_a_usage_error() {
+        let dir = ttwright_testkit::TempDir::new("preflight-unknown-binding");
+        let given = dir.path().to_string_lossy().to_string();
+        let bindings = LocationBindings::parse(&[format!("No Such Location={given}")]).unwrap();
+        let error = run_with(&custom(), &bindings).unwrap_err();
+        assert_eq!(error.code, ErrorCode::Usage);
+        assert!(error.message.contains("No Such Location"));
     }
 
     #[test]
