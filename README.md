@@ -21,8 +21,8 @@ are ported. Report problems with this repository here, not upstream.
 A TTW package of another version is refused (`unsupported_version`, exit code 3) unless you pass
 `--allow-unsupported-version`. Any package whose manifest uses something this build does not implement (an asset
 operation, a location, variable or check type, an audio parameter or format, a post-installation command, a
-manifest field) is refused before a file is written, with `unsupported_feature` naming it, for example
-`asset_op:3`. `ttwright contracts --json` lists the versions and every supported feature; `ttwright inspect`
+manifest field) is refused before the package's files are written, with `unsupported_feature` naming it, for
+example `asset_op:3`. `ttwright contracts --json` lists the versions and every supported feature; `ttwright inspect`
 checks a package without installing it.
 
 Implemented: copy from a game folder or archive, new files from the package, VCDIFF (xdelta3) patches, Ogg Vorbis
@@ -81,10 +81,11 @@ and a `Value`). Most point at a game copy through a variable such as `%FO3DATA%`
 location with a value ttwright cannot fill itself (an unrecognised variable token, or no value at all): that
 location is bindable. `ttwright inspect --mpi ...` lists those declared source locations, marks each required or
 optional and says whether it is bound; `--location NAME=PATH` on `inspect` shows the effect without writing
-anything. On install, repeat `--location NAME=PATH` for every required location. Names are matched without regard
-to case. An unbound required location stops the install before anything is written with `location_path_missing`,
-naming the location. Bound folders (and archives) are read only: ttwright writes only inside `--dest`, redirecting
-anything the manifest aimed outside it.
+anything. On install, repeat `--location NAME=PATH` for every required location. Names are matched exactly, apart
+from ASCII case, and must name a source location the package declares: a game location cannot be bound. An unbound
+required location stops the install before any of the package's files are written with `location_path_missing`,
+naming the location. Bound folders (and archives) are read only, and a folder inside `--dest` or containing it is
+refused. ttwright writes only inside `--dest`, redirecting anything the manifest aimed outside it.
 
 ### Driven by the Toolbox
 
@@ -97,7 +98,7 @@ anything the manifest aimed outside it.
 | 0 | `success` | installed |
 | 1 | `failed` | see `error.code` |
 | 2 | `failed` | wrong arguments (`usage`) |
-| 3 | `unsupported` | `unsupported_feature` or `unsupported_version`; nothing was written |
+| 3 | `unsupported` | `unsupported_feature` or `unsupported_version`; no files were installed |
 | 4 | `cancelled` | cancelled; `--resume` continues |
 
 The error codes are stable: `usage`, `mpi_not_found`, `mpi_invalid`, `not_a_package`, `manifest_missing`, `manifest_invalid`,

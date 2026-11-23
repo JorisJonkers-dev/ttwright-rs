@@ -46,12 +46,20 @@ struct CustomFixture {
 }
 
 fn custom_package(label: &str) -> CustomFixture {
-    custom_package_with(label, false)
+    custom_package_with(label, false, None)
 }
 
-fn custom_package_with(label: &str, target_the_source: bool) -> CustomFixture {
+fn custom_package_in_dest(label: &str) -> CustomFixture {
+    custom_package_with(label, false, Some("out/downloads/textures"))
+}
+
+fn custom_package_with(
+    label: &str,
+    target_the_source: bool,
+    source_relative: Option<&str>,
+) -> CustomFixture {
     let dir = TempDir::new(label);
-    let source = dir.join("texture-source");
+    let source = source_relative.map_or_else(|| dir.join("texture-source"), |p| dir.join(p));
     write(&source.join("textures/a.dds"), b"synthetic texture bytes");
     let mut m = Manifest::new("Synthetic Texture Pack", "1.0");
     let from = m.location("Texture Source", 0, "%TEXTURE_SOURCE%");
@@ -322,7 +330,7 @@ fn a_bound_source_location_installs_and_its_folder_is_only_read() {
 
 #[test]
 fn a_bound_source_folder_is_not_written_to_even_if_the_manifest_targets_it() {
-    let f = custom_package_with("cli-source-target", true);
+    let f = custom_package_with("cli-source-target", true, None);
     let binding = format!("Texture Source={}", f.source.display());
     let out = ttwright(&custom_install_args(&f, &["--location", &binding]));
     let doc = json(&out);
@@ -348,7 +356,7 @@ fn a_bound_source_folder_is_not_written_to_even_if_the_manifest_targets_it() {
 }
 
 #[test]
-fn an_unbound_required_source_location_names_itself_before_anything_is_written() {
+fn an_unbound_required_source_location_names_itself_and_installs_no_files() {
     let f = custom_package("cli-unbound-location");
     let out = ttwright(&custom_install_args(&f, &[]));
     assert_eq!(out.status.code(), Some(1));
@@ -359,6 +367,10 @@ fn an_unbound_required_source_location_names_itself_before_anything_is_written()
     let message = doc["error"]["message"].as_str().unwrap();
     assert!(message.contains("Texture Source"), "{message}");
     assert!(
+        message.contains("--location \"Texture Source=PATH\""),
+        "the hint is safe to copy into a shell: {message}"
+    );
+    assert!(
         !f.dest.join("textures/a.dds").exists(),
         "no asset was written"
     );
@@ -366,6 +378,52 @@ fn an_unbound_required_source_location_names_itself_before_anything_is_written()
         !f.dest.join(".ttwright-journal.json").exists(),
         "no journal was written"
     );
+    assert!(
+        std::fs::read_dir(&f.dest).unwrap().next().is_none(),
+        "the destination holds no install output"
+    );
+}
+
+#[test]
+fn a_bound_folder_inside_the_destination_is_refused_before_any_install_output() {
+    let f = custom_package_in_dest("cli-bound-inside-dest");
+    let binding = format!("Texture Source={}", f.source.display());
+    let out = ttwright(&custom_install_args(&f, &["--location", &binding]));
+    let doc = json(&out);
+    assert_eq!(out.status.code(), Some(2), "{doc}");
+    assert_eq!(doc["error"]["code"], "usage");
+    let message = doc["error"]["message"].as_str().unwrap();
+    assert!(message.contains("Texture Source"), "{message}");
+    assert!(message.contains("read only"), "{message}");
+    assert_eq!(
+        std::fs::read(f.source.join("textures/a.dds")).unwrap(),
+        b"synthetic texture bytes",
+        "the source folder was not written to"
+    );
+    assert!(!f.dest.join(".ttwright-journal.json").exists());
+}
+
+#[test]
+fn binding_a_known_game_location_is_a_usage_error_and_changes_no_output() {
+    let f = Fixture::new("cli-game-binding");
+    let evil = f.dir.join("evil-source");
+    write(&evil.join("loose.txt"), b"attacker-supplied bytes");
+    let binding = format!("FO3 Data={}", evil.display());
+    let out = ttwright(&install_args(&f, &["--location", &binding]));
+    let doc = json(&out);
+    assert_eq!(out.status.code(), Some(2), "{doc}");
+    assert_eq!(doc["error"]["code"], "usage");
+    assert!(
+        doc["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("FO3 Data")
+    );
+    assert!(
+        !f.dest.join("loose.txt").exists(),
+        "no game file was replaced"
+    );
+    assert!(!f.dest.join(".ttwright-journal.json").exists());
 }
 
 #[test]

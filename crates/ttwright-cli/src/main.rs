@@ -242,7 +242,7 @@ fn with_hint(doc: &mut ResultDoc) {
         (ErrorCode::GamePathMissing, Some("falloutnv")) => " (pass it with --fnv)".to_owned(),
         (ErrorCode::GamePathMissing, Some("oblivion")) => " (pass it with --oblivion)".to_owned(),
         (ErrorCode::LocationPathMissing, Some(name)) => {
-            format!(" (bind it with --location {name}=PATH)")
+            format!(" (bind it with --location \"{name}=PATH\")")
         }
         _ => String::new(),
     };

@@ -147,7 +147,8 @@ mod tests {
             let back: ErrorCode = serde_json::from_str(&json).unwrap();
             assert_eq!(back, *code);
         }
-        assert_eq!(seen.len(), ErrorCode::ALL.len());
+        // A fixed count: deriving it from ALL would not notice a code dropped from both ALL and this list.
+        assert_eq!(seen.len(), 19);
     }
 
     #[test]

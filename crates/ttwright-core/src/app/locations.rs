@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use ttwright_contract::ErrorCode;
 
 use crate::app::InstallError;
+use crate::services::Containment;
 
 /// One binding of a location's declared name to a folder (or an archive) on this machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +87,32 @@ impl LocationBindings {
     }
 }
 
+/// Refuse a binding whose folder is inside `destination` or contains it, before any file is written. Both paths
+/// are resolved (`..` and symbolic links) before they are compared, so an alias cannot make a bound folder a
+/// write target: a bound folder is only ever read from.
+///
+/// # Errors
+/// `usage` naming the location and the overlapping paths.
+pub fn check_bindings_outside_destination(
+    bindings: &LocationBindings,
+    destination: &Path,
+) -> Result<(), InstallError> {
+    let inside_destination = Containment::new(destination);
+    for binding in bindings.iter() {
+        if inside_destination.contains(&binding.path)
+            || Containment::new(&binding.path).contains(destination)
+        {
+            return Err(usage(format!(
+                "--location {} is bound to {}, which is inside or contains the destination {}; bound folders are read only",
+                binding.name,
+                binding.path.display(),
+                destination.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn usage(message: impl Into<String>) -> InstallError {
     InstallError::new(ErrorCode::Usage, message)
 }
@@ -147,5 +174,54 @@ mod tests {
                 .code,
             ErrorCode::Usage
         );
+    }
+
+    fn overlapping(dir: &ttwright_testkit::TempDir) -> (PathBuf, PathBuf) {
+        let dest = dir.join("dest");
+        let source = dir.join("source");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        (dest, source)
+    }
+
+    #[test]
+    fn a_bound_folder_inside_or_above_the_destination_is_refused() {
+        let dir = ttwright_testkit::TempDir::new("bindings-overlap");
+        let (dest, source) = overlapping(&dir);
+        std::fs::create_dir_all(dest.join("downloads")).unwrap();
+
+        let bind = |path: &Path| {
+            LocationBindings::parse(&values(&[&format!("Textures={}", path.display())])).unwrap()
+        };
+        let err =
+            check_bindings_outside_destination(&bind(&dest.join("downloads")), &dest).unwrap_err();
+        assert_eq!(err.code, ErrorCode::Usage);
+        assert!(err.message.contains("Textures"), "{}", err.message);
+        assert!(
+            check_bindings_outside_destination(&bind(dir.path()), &dest).is_err(),
+            "a bound folder containing the destination is refused"
+        );
+        check_bindings_outside_destination(&bind(&source), &dest).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_alias_or_dot_dot_cannot_hide_an_overlap_with_the_destination() {
+        let dir = ttwright_testkit::TempDir::new("bindings-canonical");
+        let (dest, source) = overlapping(&dir);
+        let alias = source.join("alias");
+        std::os::unix::fs::symlink(&dest, &alias).unwrap();
+        let bindings =
+            LocationBindings::parse(&values(&[&format!("Textures={}", alias.display())])).unwrap();
+        assert!(check_bindings_outside_destination(&bindings, &dest).is_err());
+
+        std::fs::create_dir_all(dest.join("inside")).unwrap();
+        std::fs::create_dir_all(dest.join("textures")).unwrap();
+        let bindings = LocationBindings::parse(&values(&[&format!(
+            "Textures={}",
+            dest.join("inside/../textures").display()
+        )]))
+        .unwrap();
+        assert!(check_bindings_outside_destination(&bindings, &dest).is_err());
     }
 }

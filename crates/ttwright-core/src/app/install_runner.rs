@@ -12,7 +12,7 @@ use ttwright_contract::{
 
 use crate::app::{
     CancelToken, DeclaredLocation, GameNeeds, InstallError, InstallEvent, Journal,
-    LocationBindings, check_manifest_with, classify,
+    LocationBindings, check_bindings_outside_destination, check_manifest_with, classify,
 };
 use crate::models::{Check, InstallConfig};
 use crate::services::system_memory::SystemMemory;
@@ -137,9 +137,15 @@ where
     log_requested_paths(request, emit);
     validate_request(request)?;
 
+    // Bindings are checked before the package is read or extracted: a folder inside --dest (or containing it)
+    // cannot be bound, so none of the package's files can be written into a source folder.
+    let bindings = LocationBindings::parse(&request.location_bindings)?;
+    check_bindings_outside_destination(&bindings, &request.destination_path)?;
     emit(InstallEvent::log("Loading MPI package..."));
     let (mpi_dir, cleanup_needed, mpi_store, mpi_index) = load_mpi_package(request, emit)?;
-    let result = install_from_package(request, emit, report, &mpi_dir, mpi_store, mpi_index);
+    let result = install_from_package(
+        request, emit, report, &mpi_dir, mpi_store, mpi_index, &bindings,
+    );
     if cleanup_needed {
         emit(InstallEvent::log("Cleaning up..."));
         if let Err(e) = MpiExtractor::cleanup_temp(&mpi_dir) {
@@ -158,6 +164,7 @@ fn install_from_package<F>(
     mpi_dir: &Path,
     mpi_store: Option<MpiStore>,
     mpi_index: Option<MpiPathIndex>,
+    bindings: &LocationBindings,
 ) -> Result<()>
 where
     F: Fn(InstallEvent) + Sync,
@@ -188,7 +195,8 @@ where
         package_name, package_version
     )));
 
-    // Preflight: nothing is written before the manifest's features, version and game copies are known good.
+    // Preflight: the manifest's features, version and game copies are known good before any of the package's
+    // files are written. The package itself has already been read into the destination's work folder.
     emit(InstallEvent::phase(Phase::Preflight));
     let assets = ManifestLoader::parse_assets(&manifest)?;
     report.assets.total = assets.len() as u64;
@@ -197,10 +205,9 @@ where
         "Using profile {}",
         profile_index
     )));
-    // The bindings are parsed and checked against the declared locations during preflight, before the journal
-    // and the destination folder are created.
-    let bindings = LocationBindings::parse(&request.location_bindings)?;
-    let needs = check_manifest_with(&manifest, &assets, profile_index, &bindings)?;
+    // The bindings were parsed and checked against the destination before the package was read; preflight now
+    // matches each one to the declared location it may reach, before the journal is created.
+    let needs = check_manifest_with(&manifest, &assets, profile_index, bindings)?;
     log_declared_locations(&needs.locations, emit);
     match ttw_version_support(&package_name, &package_version) {
         VersionSupport::Supported => report.package_supported = true,
@@ -250,8 +257,8 @@ where
         mpi_package_path: mpi_dir.to_string_lossy().to_string(),
     };
 
-    // A cancel that arrives before anything is written (the package read, the preflight) ends the install here, so
-    // no journal and no destination folder is left behind and no resume is offered.
+    // A cancel that arrives before the install writes its output (the package read, the preflight) ends the
+    // install here, so no journal is left behind and no resume is offered.
     if request.cancel.is_cancelled() {
         return Err(InstallError::new(
             ErrorCode::Cancelled,
@@ -288,7 +295,7 @@ where
 
     let resolver = LocationResolver::new(locations.clone(), config)
         .with_variables(&variables)
-        .with_bindings(&bindings);
+        .with_bindings(&needs.locations);
 
     // The manifest's checks: the game copies must be the expected, unmodified ones.
     emit(InstallEvent::phase(Phase::Checks));
