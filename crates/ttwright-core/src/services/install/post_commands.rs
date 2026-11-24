@@ -248,6 +248,7 @@ mod tests {
     use crate::models::PostCommand;
     use std::fs;
     use std::path::PathBuf;
+    use ttwright_testkit::{covers, ids};
 
     fn test_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -264,6 +265,7 @@ mod tests {
 
     #[test]
     fn post_commands_delete_inside_destination() {
+        covers(&[ids::install::features::POST_COMMAND_DEL]);
         let dir = test_dir("delete_inside");
         let file = dir.join("delete-me.txt");
         fs::write(&file, b"remove").unwrap();

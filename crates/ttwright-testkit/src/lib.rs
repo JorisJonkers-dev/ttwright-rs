@@ -6,6 +6,10 @@
 
 mod fixture;
 
+// The feature catalogue's ids (catalogue/, docs/USAGE.md "Feature catalogue"): a test says which manifest features it
+// proves with `covers(&[ids::install::features::ASSET_OP_2])`; an id the catalogue does not have does not compile.
+include!(concat!(env!("OUT_DIR"), "/tally_ids.rs"));
+
 pub use fixture::{Fixture, LOOSE, PATCH_SOURCE, PATCH_TARGET, crc32_hex, loc};
 
 use std::path::{Path, PathBuf};

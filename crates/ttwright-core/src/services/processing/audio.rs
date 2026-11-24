@@ -799,6 +799,7 @@ impl AudioFormat {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use ttwright_testkit::{covers, ids};
 
     use super::*;
 
@@ -866,6 +867,10 @@ mod tests {
 
     #[test]
     fn a_requested_bit_rate_is_the_bit_rate_produced() {
+        covers(&[
+            ids::install::features::AUDIO_PARAM__B,
+            ids::install::features::AUDIO_FORMAT_MP3,
+        ]);
         let wav = sine_wav(2, 44100, 2.0);
         for kbps in [128u32, 192, 256] {
             let mp3 = to_mp3(&format!("-b:{kbps}"), &wav).unwrap();
@@ -881,12 +886,19 @@ mod tests {
 
     #[test]
     fn the_bit_rate_is_192_when_none_is_asked() {
+        covers(&[ids::install::features::AUDIO_FORMAT_MP3]);
         let (_, rates, _) = mp3_header(&to_mp3("", &sine_wav(2, 44100, 1.0)).unwrap());
         assert!(rates.iter().all(|&r| r == 192));
     }
 
     #[test]
     fn a_mono_source_asked_for_two_channels_comes_out_stereo() {
+        covers(&[
+            ids::install::features::AUDIO_PARAM__C,
+            ids::install::features::AUDIO_PARAM__FMT,
+            ids::install::features::AUDIO_PARAM__B,
+            ids::install::features::AUDIO_FORMAT_MP3,
+        ]);
         let mp3 = to_mp3("-c:2 -fmt:mp3 -b:192", &sine_wav(1, 44100, 1.0)).unwrap();
         assert_eq!(mp3_header(&mp3).0, 2);
         assert_eq!(decode_mp3(&mp3).channels, 2);
@@ -894,6 +906,10 @@ mod tests {
 
     #[test]
     fn a_stereo_source_asked_for_one_channel_comes_out_mono() {
+        covers(&[
+            ids::install::features::AUDIO_PARAM__C,
+            ids::install::features::AUDIO_FORMAT_MP3,
+        ]);
         let mp3 = to_mp3("-c:1", &sine_wav(2, 44100, 1.0)).unwrap();
         assert_eq!(mp3_header(&mp3).0, 1);
         assert_eq!(decode_mp3(&mp3).channels, 1);
@@ -913,6 +929,7 @@ mod tests {
 
     #[test]
     fn a_mono_source_keeps_its_length_with_no_channel_parameter() {
+        covers(&[ids::install::features::AUDIO_FORMAT_MP3]);
         let mp3 = to_mp3("", &sine_wav(1, 44100, 1.0)).unwrap();
         assert_eq!(mp3_header(&mp3).0, 1);
         assert_mono_length(&mp3, 1.0);
@@ -920,6 +937,10 @@ mod tests {
 
     #[test]
     fn a_mono_source_keeps_its_length_with_one_channel_asked() {
+        covers(&[
+            ids::install::features::AUDIO_PARAM__C,
+            ids::install::features::AUDIO_FORMAT_MP3,
+        ]);
         let mp3 = to_mp3("-c:1", &sine_wav(1, 44100, 1.0)).unwrap();
         assert_eq!(mp3_header(&mp3).0, 1);
         assert_mono_length(&mp3, 1.0);
@@ -927,6 +948,10 @@ mod tests {
 
     #[test]
     fn a_stereo_source_downmixed_to_one_channel_keeps_its_length() {
+        covers(&[
+            ids::install::features::AUDIO_PARAM__C,
+            ids::install::features::AUDIO_FORMAT_MP3,
+        ]);
         let mp3 = to_mp3("-c:1", &sine_wav(2, 44100, 1.0)).unwrap();
         assert_eq!(mp3_header(&mp3).0, 1);
         assert_mono_length(&mp3, 1.0);
@@ -934,6 +959,7 @@ mod tests {
 
     #[test]
     fn a_stereo_source_keeps_its_length() {
+        covers(&[ids::install::features::AUDIO_FORMAT_MP3]);
         let decoded = decode_mp3(&to_mp3("", &sine_wav(2, 44100, 1.0)).unwrap());
         assert_eq!(decoded.channels, 2);
         let got = decoded.samples.len() as f32 / 2.0 / decoded.sample_rate as f32;
@@ -942,6 +968,7 @@ mod tests {
 
     #[test]
     fn the_channel_count_is_kept_when_none_is_asked() {
+        covers(&[ids::install::features::AUDIO_FORMAT_MP3]);
         assert_eq!(
             mp3_header(&to_mp3("", &sine_wav(1, 44100, 1.0)).unwrap()).0,
             1
@@ -950,6 +977,12 @@ mod tests {
 
     #[test]
     fn the_whole_ttw_radio_parameter_set_produces_stereo_192() {
+        covers(&[
+            ids::install::features::AUDIO_PARAM__C,
+            ids::install::features::AUDIO_PARAM__FMT,
+            ids::install::features::AUDIO_PARAM__B,
+            ids::install::features::AUDIO_FORMAT_MP3,
+        ]);
         let mp3 = to_mp3("-c:2 -fmt:mp3 -b:192", &sine_wav(1, 44100, 2.0)).unwrap();
         let (channels, rates, rate) = mp3_header(&mp3);
         assert_eq!((channels, rate), (2, 44100));

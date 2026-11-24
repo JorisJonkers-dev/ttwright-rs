@@ -86,7 +86,7 @@ fn apply_one(attr: &FileAttr, destination: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ttwright_testkit::{TempDir, write};
+    use ttwright_testkit::{TempDir, covers, ids, write};
 
     fn attr(value: &str, when: &str) -> FileAttr {
         FileAttr {
@@ -120,6 +120,10 @@ mod tests {
 
     #[test]
     fn times_are_set_and_missing_or_outside_files_fail() {
+        covers(&[
+            ids::install::features::MANIFEST_FIELD_FILEATTRS,
+            ids::install::features::VARIABLE__DESTINATION_,
+        ]);
         let dir = TempDir::new("attrs");
         write(&dir.join("Synthetic - Main.bsa"), b"a");
         let dest = dir.path().to_string_lossy().into_owned();

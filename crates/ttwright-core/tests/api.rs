@@ -5,7 +5,7 @@ use serde_json::json;
 use ttwright_contract::{ErrorCode, Event, Phase, Status};
 use ttwright_core::api::{CancelToken, InstallJob, InstallOutput, NoProgress, install};
 use ttwright_core::app::JOURNAL_FILE;
-use ttwright_testkit::{Fixture, loc};
+use ttwright_testkit::{Fixture, covers, ids, loc};
 
 fn job(f: &Fixture) -> InstallJob {
     InstallJob {
@@ -18,6 +18,11 @@ fn job(f: &Fixture) -> InstallJob {
 
 #[test]
 fn install_writes_the_package_and_answers_done_with_a_success_document() {
+    covers(&[
+        ids::install::features::ASSET_OP_0,
+        ids::install::features::LOCATION_TYPE_0,
+        ids::install::features::VARIABLE__DESTINATION_,
+    ]);
     let f = Fixture::new("api-done");
     let out = install(&job(&f), &mut NoProgress, &CancelToken::new()).unwrap();
     let InstallOutput::Done { result } = out else {
