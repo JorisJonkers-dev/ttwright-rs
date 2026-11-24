@@ -6,7 +6,7 @@ use std::process::{Command, Output};
 
 use serde_json::Value;
 use ttwright_contract::{DocumentKind, ErrorCode, Status, check, schema_file_name, schema_json};
-use ttwright_testkit::{Fixture, Manifest, TempDir, loc, mpi_package, write};
+use ttwright_testkit::{Fixture, Manifest, TempDir, covers, ids, loc, mpi_package, write};
 
 fn ttwright(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_ttwright"))
@@ -314,6 +314,11 @@ fn people_get_a_summary_and_inspect_reports_support() {
 
 #[test]
 fn a_bound_source_location_installs_and_its_folder_is_only_read() {
+    covers(&[
+        ids::install::features::ASSET_OP_0,
+        ids::install::features::LOCATION_TYPE_0,
+        ids::install::features::VARIABLE__DESTINATION_,
+    ]);
     let f = custom_package("cli-bound-location");
     let binding = format!("Texture Source={}", f.source.display());
     let out = ttwright(&custom_install_args(&f, &["--location", &binding]));

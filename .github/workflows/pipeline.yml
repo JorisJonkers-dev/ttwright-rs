@@ -153,6 +153,29 @@ jobs:
           echo "rust-version: $declared, rust-toolchain.toml: $pinned"
           test "$declared" = "$pinned"
 
+      # The feature catalogue (catalogue/, docs/USAGE.md "Feature catalogue"): ids, the generator copy and the test tags
+      # hold, and the manifest features `ttwright contracts --json` lists are exactly the implemented items. tally is a
+      # pinned release binary, checked against its SHA-256.
+      - name: Feature catalogue (tally)
+        if: ${{ !cancelled() }}
+        env:
+          TALLY_VERSION: v0.3.0
+          TALLY_SHA256: 3b52c64e4b26015c3a18703446948e92b18d7e4a70f5600b3915549ef287dd82
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          mkdir -p target
+          cargo run --quiet --locked -p ttwright-cli -- contracts --json >target/contracts.json
+          curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/tally" "https://github.com/JorisJonkers-dev/tally/releases/download/${TALLY_VERSION}/tally-x86_64-unknown-linux-gnu"
+          echo "${TALLY_SHA256}  $RUNNER_TEMP/tally" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/tally"
+          if [ -n "${BASE:-}" ] && [ "$BASE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            "$RUNNER_TEMP/tally" check --base "$BASE"
+          else
+            "$RUNNER_TEMP/tally" check
+          fi
+          "$RUNNER_TEMP/tally" report --depth 2 --format md >>"$GITHUB_STEP_SUMMARY"
+
       - name: Fuzz harnesses compile
         if: ${{ !cancelled() }}
         run: cargo check --locked --manifest-path fuzz/Cargo.toml

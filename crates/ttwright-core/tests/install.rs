@@ -10,7 +10,7 @@ use ttwright_core::app::{
     CancelToken, InstallEvent, InstallOutcome, InstallRequest, JOURNAL_FILE, run_install,
 };
 use ttwright_core::services::BsaHandler;
-use ttwright_testkit::{Fixture, PATCH_TARGET, loc};
+use ttwright_testkit::{Fixture, PATCH_TARGET, covers, ids, loc};
 
 fn request(f: &Fixture) -> InstallRequest {
     InstallRequest {
@@ -42,6 +42,33 @@ fn read(path: &Path) -> Vec<u8> {
 
 #[test]
 fn every_supported_operation_installs() {
+    // covers-table: one package that uses every supported operation, installed end to end and checked file by file
+    covers(&[
+        ids::install::features::MANIFEST_FIELD_PACKAGE,
+        ids::install::features::MANIFEST_FIELD_VARIABLES,
+        ids::install::features::MANIFEST_FIELD_LOCATIONS,
+        ids::install::features::MANIFEST_FIELD_ASSETS,
+        ids::install::features::MANIFEST_FIELD_CHECKS,
+        ids::install::features::MANIFEST_FIELD_FILEATTRS,
+        ids::install::features::MANIFEST_FIELD_POSTCOMMANDS,
+        ids::install::features::ASSET_OP_0,
+        ids::install::features::ASSET_OP_1,
+        ids::install::features::ASSET_OP_2,
+        ids::install::features::ASSET_OP_5,
+        ids::install::features::LOCATION_TYPE_0,
+        ids::install::features::LOCATION_TYPE_1,
+        ids::install::features::LOCATION_TYPE_2,
+        ids::install::features::VARIABLE_TYPE_4,
+        ids::install::features::VARIABLE__DESTINATION_,
+        ids::install::features::VARIABLE__FO3ROOT_,
+        ids::install::features::CHECK_TYPE_0,
+        ids::install::features::CHECK_TYPE_1,
+        ids::install::features::CHECK_TYPE_2,
+        ids::install::features::POST_COMMAND_REN,
+        ids::install::features::AUDIO_FORMAT_OGG,
+        ids::install::features::AUDIO_PARAM__F,
+        ids::install::features::AUDIO_PARAM__Q,
+    ]);
     let f = Fixture::new("all-ops");
     let (outcome, events) = install(request(&f));
     assert!(outcome.error.is_none(), "{:?}", outcome.error);
@@ -109,6 +136,7 @@ fn every_supported_operation_installs() {
 
 #[test]
 fn an_extracted_package_folder_installs() {
+    covers(&[ids::install::features::ASSET_OP_2]);
     let f = Fixture::new("folder");
     let folder = f.dir.join("extracted");
     let bytes = read(&f.mpi);
@@ -228,6 +256,7 @@ fn a_needed_game_copy_must_be_given_when_not_detecting() {
 
 #[test]
 fn a_failed_check_stops_the_install() {
+    covers(&[ids::install::features::CHECK_TYPE_0]);
     let mut m = Fixture::manifest();
     m.check(
         json!({"Type": 0, "Loc": loc::GAME_DATA, "File": "loose.txt", "Checksums": "deadbeef"}),
@@ -284,6 +313,11 @@ fn a_dry_run_writes_nothing() {
 
 #[test]
 fn a_cancelled_install_resumes_and_skips_what_is_done() {
+    covers(&[
+        ids::install::features::ASSET_OP_0,
+        ids::install::features::LOCATION_TYPE_1,
+        ids::install::features::LOCATION_TYPE_2,
+    ]);
     let f = Fixture::new("resume");
     let cancel = CancelToken::new();
     let mut req = request(&f);
@@ -421,6 +455,10 @@ mod containment {
 
     #[test]
     fn an_asset_for_an_outside_location_is_redirected_and_nothing_is_written_outside() {
+        covers(&[
+            ids::install::features::ASSET_OP_0,
+            ids::install::features::LOCATION_TYPE_0,
+        ]);
         let scratch = TempDir::new("outside-asset");
         let outside = scratch.join("game");
         std::fs::create_dir_all(&outside).unwrap();
@@ -627,6 +665,10 @@ mod containment {
 
     #[test]
     fn a_resumed_install_keeps_the_redirected_files_and_reports_them_again() {
+        covers(&[
+            ids::install::features::ASSET_OP_0,
+            ids::install::features::LOCATION_TYPE_0,
+        ]);
         let scratch = TempDir::new("outside-resume");
         let outside = scratch.join("game");
         std::fs::create_dir_all(&outside).unwrap();
@@ -697,6 +739,7 @@ fn interrupt(f: &Fixture) {
 
 #[test]
 fn a_first_run_into_a_folder_holding_the_file_is_still_refused() {
+    covers(&[ids::install::features::CHECK_TYPE_0]);
     let f = fixture_refusing("inverted-first", "meshes/a.nif");
     std::fs::create_dir_all(f.dest.join("meshes")).unwrap();
     std::fs::write(f.dest.join("meshes/a.nif"), b"somebody else's").unwrap();
@@ -713,6 +756,7 @@ fn a_first_run_into_a_folder_holding_the_file_is_still_refused() {
 
 #[test]
 fn a_resume_passes_the_must_not_exist_check_for_a_file_the_interrupted_run_wrote() {
+    covers(&[ids::install::features::CHECK_TYPE_0]);
     let f = fixture_refusing("inverted-resume", "meshes/a.nif");
     interrupt(&f);
     assert!(f.dest.join("meshes/a.nif").is_file());
@@ -727,6 +771,7 @@ fn a_resume_passes_the_must_not_exist_check_for_a_file_the_interrupted_run_wrote
 
 #[test]
 fn a_resume_refuses_a_file_the_journal_does_not_explain_in_ttwrights_words() {
+    covers(&[ids::install::features::CHECK_TYPE_0]);
     let f = fixture_refusing("inverted-foreign", "foreign.txt");
     interrupt(&f);
     std::fs::write(f.dest.join("foreign.txt"), b"not written by the install").unwrap();
@@ -775,6 +820,7 @@ fn fixture_redirected_refusing(label: &str, outside: &Path, check_file: &str) ->
 
 #[test]
 fn a_resume_passes_the_must_not_exist_check_for_a_redirected_file_the_interrupted_run_wrote() {
+    covers(&[ids::install::features::CHECK_TYPE_0]);
     let scratch = ttwright_testkit::TempDir::new("redirected-own");
     let outside = scratch.join("game");
     std::fs::create_dir_all(&outside).unwrap();
@@ -795,6 +841,7 @@ fn a_resume_passes_the_must_not_exist_check_for_a_redirected_file_the_interrupte
 
 #[test]
 fn a_resume_refuses_a_redirected_file_the_interrupted_run_did_not_write() {
+    covers(&[ids::install::features::CHECK_TYPE_0]);
     let scratch = ttwright_testkit::TempDir::new("redirected-foreign");
     let outside = scratch.join("game");
     std::fs::create_dir_all(&outside).unwrap();

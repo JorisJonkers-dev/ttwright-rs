@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# The feature catalogue of ttwright-rs, read by tally (https://github.com/JorisJonkers-dev/tally, docs/FORMAT.md):
+# the MPI manifest features an install supports, and which tests prove them.
+[repo]
+package = "ttwright"
+name = "ttwright-rs"
+
+[scan]
+paths = ["crates/ttwright-core", "crates/ttwright-cli", "crates/ttwright-contract"]
+
+[areas]
+install = "TTW installs"
+
+# The features `ttwright contracts --json` lists (written to target/contracts.json before tally check) are exactly the
+# implemented items of the group.
+[[evidence]]
+kind = "contracts"
+path = "target/contracts.json"
+groups = ["install.features"]

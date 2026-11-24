@@ -127,3 +127,27 @@ gh attestation verify oci://ghcr.io/jorisjonkers-dev/ttwright-rs:<version>-<targ
 ```
 
 To republish an existing tag, for example after the package was renamed, run the release workflow by hand on `main` with the tag and `publish` set: `gh workflow run release.yml -R JorisJonkers-dev/ttwright-rs --ref main -f tag=vX.Y.Z -f publish=true`. The run builds the binaries of that tag, uploads the assets to its GitHub release and pushes the packages again; it tells no one. Without `publish=true` it is a dry run that pushes nothing.
+
+## Feature catalogue
+
+`catalogue/` lists the MPI manifest features an install supports (`install.features`), read by
+[tally](https://github.com/JorisJonkers-dev/tally) (format: its `docs/FORMAT.md`). The implemented items must be
+exactly the features `ttwright contracts --json` lists (`crates/ttwright-contract/src/supports.rs`): a pull request
+that adds a feature adds its item in the same pull request, or the Pipeline's "Feature catalogue (tally)" step fails.
+
+Tests say which features they prove, with the typed ids `ttwright-testkit` builds from the catalogue (its build.rs
+runs tally's generator, `catalogue/tally_ids_gen.rs`):
+
+```rust
+use ttwright_testkit::{covers, ids};
+
+#[test]
+fn a_patch_applies_in_memory_and_on_disk() {
+    covers(&[ids::install::features::ASSET_OP_2]);
+    // ...
+}
+```
+
+An id the catalogue does not have does not compile. Tag only what the test runs and checks; more than ten ids in one
+test needs a `// covers-table: <reason>` comment. Locally:
+`cargo run -p ttwright-cli -- contracts --json >target/contracts.json && tally check`.

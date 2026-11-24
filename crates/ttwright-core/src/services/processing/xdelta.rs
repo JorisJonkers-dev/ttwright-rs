@@ -50,10 +50,11 @@ impl XdeltaManager {
 #[cfg(test)]
 mod tests {
     use super::XdeltaManager;
-    use ttwright_testkit::{TempDir, vcdiff, write};
+    use ttwright_testkit::{TempDir, covers, ids, vcdiff, write};
 
     #[test]
     fn a_patch_applies_in_memory_and_on_disk() {
+        covers(&[ids::install::features::ASSET_OP_2]);
         let dir = TempDir::new("xdelta");
         let x = XdeltaManager::ensure_available(dir.path().to_path_buf()).unwrap();
         assert!(x.verify().unwrap().contains("oxidelta"));
