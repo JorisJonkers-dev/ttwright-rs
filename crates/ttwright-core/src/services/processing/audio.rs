@@ -895,8 +895,6 @@ mod tests {
     fn a_mono_source_asked_for_two_channels_comes_out_stereo() {
         covers(&[
             ids::install::features::AUDIO_PARAM__C,
-            ids::install::features::AUDIO_PARAM__FMT,
-            ids::install::features::AUDIO_PARAM__B,
             ids::install::features::AUDIO_FORMAT_MP3,
         ]);
         let mp3 = to_mp3("-c:2 -fmt:mp3 -b:192", &sine_wav(1, 44100, 1.0)).unwrap();
@@ -979,7 +977,6 @@ mod tests {
     fn the_whole_ttw_radio_parameter_set_produces_stereo_192() {
         covers(&[
             ids::install::features::AUDIO_PARAM__C,
-            ids::install::features::AUDIO_PARAM__FMT,
             ids::install::features::AUDIO_PARAM__B,
             ids::install::features::AUDIO_FORMAT_MP3,
         ]);
