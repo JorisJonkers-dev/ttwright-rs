@@ -1,7 +1,7 @@
 # ttwright-rs
 
 **ttwright installs [Tale of Two Wastelands](https://taleoftwowastelands.com/)**, the mod that brings Fallout 3's
-world into Fallout: New Vegas, so you can play both games' stories in one. It builds it from your own copies of both
+world into Fallout: New Vegas. It builds it from your own copies of both
 games, on Linux, Windows and macOS, and leaves both games untouched.
 
 <p align="center">
@@ -10,8 +10,8 @@ games, on Linux, Windows and macOS, and leaves both games untouched.
 
 ## What you see
 
-ttwright is the **Tale of Two Wastelands** page of [raul](https://github.com/JorisJonkers-dev/rauls-trusty-toolbox):
-pick your games and the TTW download, check the space it needs, and install.
+ttwright is the **Tale of Two Wastelands** page of [raul](https://github.com/JorisJonkers-dev/rauls-trusty-toolbox), the app that sets up New Vegas with your
+mods. Pick your games and the TTW download, check the space it needs, and install.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/JorisJonkers-dev/rauls-trusty-toolbox/main/crates/raul-gui/tests/snapshots/ttw/ttw-sources-ready.png" alt="raul's TTW page, step 1 of 4: the Fallout 3 folder, New Vegas and the TTW package are set" width="49%">
@@ -20,7 +20,7 @@ pick your games and the TTW download, check the space it needs, and install.
 
 ## What it does for you
 
-- 🐧 **Any system**: runs natively on Linux, Windows and macOS; Linux needs no Windows tools.
+- 🐧 **Any system**: runs natively on Linux, Windows and macOS.
 - ⏸️ **Stop and continue**: cancel an install and pick it up later where it stopped.
 - 🛡️ **Safe**: it writes only into its own output folder, and checks the package before it writes anything.
 - 🧩 **One Mod**: raul adds the result to your mod list as one Mod.
