@@ -5,3 +5,5 @@ actionlint = "1.7.12"
 "aqua:EmbarkStudios/cargo-deny" = "0.21.0"
 "aqua:rustsec/rustsec/cargo-audit" = "0.22.2"
 "aqua:taiki-e/cargo-llvm-cov" = "0.9.1"
+# Runs the tests in CI with JUnit output for the feature-catalogue reports (.config/nextest.toml).
+"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.152"

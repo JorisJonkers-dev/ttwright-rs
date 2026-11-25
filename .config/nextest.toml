@@ -1,0 +1,12 @@
+# cargo-nextest settings. CI runs the tests with `--profile ci` on Linux, Windows and macOS and hands the JUnit
+# files to the feature-catalogue reports (tally ingest; docs/USAGE.md, "Feature catalogue"). A test counts as
+# passed only when it ran once and passed: no retries, so no flaky pass, and every skipped test is listed.
+
+[profile.ci]
+retries = 0
+fail-fast = false
+flaky-result = "fail"
+
+[profile.ci.junit]
+path = "junit.xml"
+report-skipped = "all"

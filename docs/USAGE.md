@@ -151,3 +151,12 @@ fn a_patch_applies_in_memory_and_on_disk() {
 An id the catalogue does not have does not compile. Tag only what the test runs and checks; more than ten ids in one
 test needs a `// covers-table: <reason>` comment. Locally:
 `cargo run -p ttwright-cli -- contracts --json >target/contracts.json && tally check`.
+
+An item is **covered** when a test tagged with it passed on Linux, Windows and macOS. CI runs the tests through
+cargo-nextest (`.config/nextest.toml`, profile `ci`: no retries, skipped tests listed) on all three, and
+`Pipeline Complete` reads the three JUnit files with `tally ingest`. The covered and tagged counts may not drop
+below main's last report (`docs/coverage/tally-report.json`), or the step fails. On main the job "Catalogue reports" commits the generated reports (`docs/coverage/FEATURES.md`,
+`tally-report.json`, `tally.svg`) as the raul-progress-bot App; pull requests never edit `docs/coverage/`. Locally:
+`cargo nextest run --workspace --profile ci`, then
+`tally ingest --junit target/nextest/ci/junit.xml --os linux --out target/results.json` and
+`tally report --results target/results.json` (Linux alone gives passing, not covered).
