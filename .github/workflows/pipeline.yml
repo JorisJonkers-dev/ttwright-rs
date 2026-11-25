@@ -26,8 +26,8 @@ env:
   CARGO_TERM_COLOR: always
   # The pinned tally release (https://github.com/JorisJonkers-dev/tally) and the SHA-256 of its Linux binary, from
   # that release's SHA256SUMS.
-  TALLY_VERSION: v0.4.0
-  TALLY_SHA256: 82db1f5144f99f3796d9f981bf639161cd506dfc0876760d4cf88914ba339aa6
+  TALLY_VERSION: v0.6.0
+  TALLY_SHA256: 4869bf6028f3833c62d8c9fd40167bfa749dc753b1999c82b9cbea0b4ef45377
   # The generated feature-catalogue reports: the only files the `reports` job may commit on main.
   REPORT_FILES: >-
     docs/coverage/FEATURES.md
@@ -171,6 +171,14 @@ jobs:
           for f in target/nextest/ci/junit.xml target/llvm-cov-target/nextest/ci/junit.xml; do
             if [ -f "$f" ]; then cp "$f" "$RUNNER_TEMP/junit/junit-linux.xml"; break; fi
           done
+      # Kept with the run as well, like Windows' and macOS', so anyone can re-read all three systems' results.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !cancelled() }}
+        with:
+          name: junit-linux
+          path: ${{ runner.temp }}/junit/junit-linux.xml
+          if-no-files-found: warn
+          retention-days: 7
 
       # 70% of the executable lines a change adds or edits must run in a test (docs/COVERAGE.md).
       - name: Changed-line coverage gate (70%)
