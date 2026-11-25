@@ -1,6 +1,6 @@
 {
   "schema": "tally-report.v1",
-  "tool": "tally 0.4.0",
+  "tool": "tally 0.6.0",
   "repo": "ttwright-rs",
   "results": true,
   "totals": {
@@ -13,6 +13,20 @@
     "gated": 0,
     "not_applicable": 0,
     "deferred": 0
+  },
+  "headline": {
+    "title": "All areas",
+    "counts": {
+      "total": 35,
+      "missing": 0,
+      "implemented": 35,
+      "tagged": 28,
+      "passing": 28,
+      "covered": 28,
+      "gated": 0,
+      "not_applicable": 0,
+      "deferred": 0
+    }
   },
   "areas": [
     {
