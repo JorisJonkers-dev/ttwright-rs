@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.5.0...v0.6.0) (2026-11-25)
+
+
+### Features
+
+* **catalogue:** feature catalogue of the supported manifest features, checked against the Contracts ([#72](https://github.com/JorisJonkers-dev/ttwright-rs/issues/72)) ([afa0021](https://github.com/JorisJonkers-dev/ttwright-rs/commit/afa0021efd9af7fbecf670e32b044207ed895f38))
+* **install:** bind custom source locations with --location ([#67](https://github.com/JorisJonkers-dev/ttwright-rs/issues/67)) ([c51c5c0](https://github.com/JorisJonkers-dev/ttwright-rs/commit/c51c5c0e0c4137728b8bb076a730abf8d9762ce1))
+
+
+### Bug Fixes
+
+* **deps:** update minor and patch dependencies ([#63](https://github.com/JorisJonkers-dev/ttwright-rs/issues/63)) ([ef7e475](https://github.com/JorisJonkers-dev/ttwright-rs/commit/ef7e475631765620c5d688e7094dd10a23571401))
+
 ## [0.5.0](https://github.com/JorisJonkers-dev/ttwright-rs/compare/v0.4.4...v0.5.0) (2026-11-20)
 
 
