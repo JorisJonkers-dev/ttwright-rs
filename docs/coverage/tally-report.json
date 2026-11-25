@@ -1,0 +1,532 @@
+{
+  "schema": "tally-report.v1",
+  "tool": "tally 0.4.0",
+  "repo": "ttwright-rs",
+  "results": true,
+  "totals": {
+    "total": 35,
+    "missing": 0,
+    "implemented": 35,
+    "tagged": 28,
+    "passing": 28,
+    "covered": 28,
+    "gated": 0,
+    "not_applicable": 0,
+    "deferred": 0
+  },
+  "areas": [
+    {
+      "id": "install",
+      "title": "TTW installs",
+      "counts": {
+        "total": 35,
+        "missing": 0,
+        "implemented": 35,
+        "tagged": 28,
+        "passing": 28,
+        "covered": 28,
+        "gated": 0,
+        "not_applicable": 0,
+        "deferred": 0
+      },
+      "groups": [
+        {
+          "id": "install.features",
+          "title": "MPI manifest features",
+          "origin": "original",
+          "counts": {
+            "total": 35,
+            "missing": 0,
+            "implemented": 35,
+            "tagged": 28,
+            "passing": 28,
+            "covered": 28,
+            "gated": 0,
+            "not_applicable": 0,
+            "deferred": 0
+          },
+          "items": [
+            {
+              "id": "install.features.manifest_field_package",
+              "title": "`manifest_field:Package`: package title, version and author",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.manifest_field_variables",
+              "title": "`manifest_field:Variables`: variables per profile",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.manifest_field_locations",
+              "title": "`manifest_field:Locations`: locations per profile",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.manifest_field_tags",
+              "title": "`manifest_field:Tags`: asset tags (informational)",
+              "origin": "original",
+              "state": "implemented",
+              "tests": []
+            },
+            {
+              "id": "install.features.manifest_field_assets",
+              "title": "`manifest_field:Assets`: asset operations",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.manifest_field_checks",
+              "title": "`manifest_field:Checks`: pre-installation checks",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.manifest_field_fileattrs",
+              "title": "`manifest_field:FileAttrs`: modification times set after the install",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/src/services/install/file_attrs.rs::times_are_set_and_missing_or_outside_files_fail",
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.manifest_field_postcommands",
+              "title": "`manifest_field:PostCommands`: post-installation commands",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.asset_op_0",
+              "title": "`asset_op:0`: copy a file from a game folder or archive",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-cli/tests/cli.rs::a_bound_source_location_installs_and_its_folder_is_only_read",
+                "crates/ttwright-core/tests/api.rs::install_writes_the_package_and_answers_done_with_a_success_document",
+                "crates/ttwright-core/tests/install.rs::a_cancelled_install_resumes_and_skips_what_is_done",
+                "crates/ttwright-core/tests/install.rs::a_resumed_install_keeps_the_redirected_files_and_reports_them_again",
+                "crates/ttwright-core/tests/install.rs::an_asset_for_an_outside_location_is_redirected_and_nothing_is_written_outside",
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.asset_op_1",
+              "title": "`asset_op:1`: a new file from the package",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.asset_op_2",
+              "title": "`asset_op:2`: a VCDIFF (xdelta3) patch of a game file",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/src/services/processing/xdelta.rs::a_patch_applies_in_memory_and_on_disk",
+                "crates/ttwright-core/tests/install.rs::an_extracted_package_folder_installs",
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.asset_op_4",
+              "title": "`asset_op:4`: resample Ogg Vorbis audio (OggEnc2)",
+              "origin": "original",
+              "state": "implemented",
+              "tests": []
+            },
+            {
+              "id": "install.features.asset_op_5",
+              "title": "`asset_op:5`: decode and encode audio to Ogg Vorbis, WAV or MP3",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.audio_param__f",
+              "title": "`audio_param:-f`: target sample rate in Hz",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.audio_param__q",
+              "title": "`audio_param:-q`: Ogg Vorbis quality, 0 to 10",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.audio_param__c",
+              "title": "`audio_param:-c`: output channel count, 1 or 2 (mono and stereo convert into each other)",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/src/services/processing/audio.rs::a_mono_source_asked_for_two_channels_comes_out_stereo",
+                "crates/ttwright-core/src/services/processing/audio.rs::a_mono_source_keeps_its_length_with_one_channel_asked",
+                "crates/ttwright-core/src/services/processing/audio.rs::a_stereo_source_asked_for_one_channel_comes_out_mono",
+                "crates/ttwright-core/src/services/processing/audio.rs::a_stereo_source_downmixed_to_one_channel_keeps_its_length",
+                "crates/ttwright-core/src/services/processing/audio.rs::the_whole_ttw_radio_parameter_set_produces_stereo_192"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.audio_param__fmt",
+              "title": "`audio_param:-fmt`: output format (ogg, wav or mp3), checked against the target file's extension",
+              "origin": "original",
+              "state": "implemented",
+              "tests": []
+            },
+            {
+              "id": "install.features.audio_param__b",
+              "title": "`audio_param:-b`: MP3 bit rate in kbit/s (8 to 320, the LAME rates)",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/src/services/processing/audio.rs::a_requested_bit_rate_is_the_bit_rate_produced",
+                "crates/ttwright-core/src/services/processing/audio.rs::the_whole_ttw_radio_parameter_set_produces_stereo_192"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.audio_format_ogg",
+              "title": "`audio_format:ogg`: Ogg Vorbis output",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.audio_format_wav",
+              "title": "`audio_format:wav`: WAV output",
+              "origin": "original",
+              "state": "implemented",
+              "tests": []
+            },
+            {
+              "id": "install.features.audio_format_mp3",
+              "title": "`audio_format:mp3`: MP3 output (LAME)",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/src/services/processing/audio.rs::a_mono_source_asked_for_two_channels_comes_out_stereo",
+                "crates/ttwright-core/src/services/processing/audio.rs::a_mono_source_keeps_its_length_with_no_channel_parameter",
+                "crates/ttwright-core/src/services/processing/audio.rs::a_mono_source_keeps_its_length_with_one_channel_asked",
+                "crates/ttwright-core/src/services/processing/audio.rs::a_requested_bit_rate_is_the_bit_rate_produced",
+                "crates/ttwright-core/src/services/processing/audio.rs::a_stereo_source_asked_for_one_channel_comes_out_mono",
+                "crates/ttwright-core/src/services/processing/audio.rs::a_stereo_source_downmixed_to_one_channel_keeps_its_length",
+                "crates/ttwright-core/src/services/processing/audio.rs::a_stereo_source_keeps_its_length",
+                "crates/ttwright-core/src/services/processing/audio.rs::the_bit_rate_is_192_when_none_is_asked",
+                "crates/ttwright-core/src/services/processing/audio.rs::the_channel_count_is_kept_when_none_is_asked",
+                "crates/ttwright-core/src/services/processing/audio.rs::the_whole_ttw_radio_parameter_set_produces_stereo_192"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.location_type_0",
+              "title": "`location_type:0`: a folder",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-cli/tests/cli.rs::a_bound_source_location_installs_and_its_folder_is_only_read",
+                "crates/ttwright-core/tests/api.rs::install_writes_the_package_and_answers_done_with_a_success_document",
+                "crates/ttwright-core/tests/install.rs::a_resumed_install_keeps_the_redirected_files_and_reports_them_again",
+                "crates/ttwright-core/tests/install.rs::an_asset_for_an_outside_location_is_redirected_and_nothing_is_written_outside",
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.location_type_1",
+              "title": "`location_type:1`: an archive (BSA) read from",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::a_cancelled_install_resumes_and_skips_what_is_done",
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.location_type_2",
+              "title": "`location_type:2`: an archive (BSA) written to",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::a_cancelled_install_resumes_and_skips_what_is_done",
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.variable_type_0",
+              "title": "`variable_type:0`: a string, may name other variables",
+              "origin": "original",
+              "state": "implemented",
+              "tests": []
+            },
+            {
+              "id": "install.features.variable_type_4",
+              "title": "`variable_type:4`: a registry path, replaced by the game copy given on the command line",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.variable__destination_",
+              "title": "`variable:%DESTINATION%`: the destination folder",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-cli/tests/cli.rs::a_bound_source_location_installs_and_its_folder_is_only_read",
+                "crates/ttwright-core/src/services/install/file_attrs.rs::times_are_set_and_missing_or_outside_files_fail",
+                "crates/ttwright-core/tests/api.rs::install_writes_the_package_and_answers_done_with_a_success_document",
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.variable__fo3root_",
+              "title": "`variable:%FO3ROOT%`: the Fallout 3 copy (also %FO3DATA%, %FALLOUT3ROOT%, %FALLOUT3DATA%)",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.variable__fnvroot_",
+              "title": "`variable:%FNVROOT%`: the Fallout: New Vegas copy (also %FNVDATA%, %FALLOUTNVROOT%, %FALLOUTNVDATA%)",
+              "origin": "original",
+              "state": "implemented",
+              "tests": []
+            },
+            {
+              "id": "install.features.variable__tes4root_",
+              "title": "`variable:%TES4ROOT%`: the Oblivion copy (also %TES4DATA%, %OBLIVIONROOT%, %OBLIVIONDATA%)",
+              "origin": "original",
+              "state": "implemented",
+              "tests": []
+            },
+            {
+              "id": "install.features.check_type_0",
+              "title": "`check_type:0`: a file exists, or matches an MD5, SHA-1 or CRC32 checksum",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::a_failed_check_stops_the_install",
+                "crates/ttwright-core/tests/install.rs::a_first_run_into_a_folder_holding_the_file_is_still_refused",
+                "crates/ttwright-core/tests/install.rs::a_resume_passes_the_must_not_exist_check_for_a_file_the_interrupted_run_wrote",
+                "crates/ttwright-core/tests/install.rs::a_resume_passes_the_must_not_exist_check_for_a_redirected_file_the_interrupted_run_wrote",
+                "crates/ttwright-core/tests/install.rs::a_resume_refuses_a_file_the_journal_does_not_explain_in_ttwrights_words",
+                "crates/ttwright-core/tests/install.rs::a_resume_refuses_a_redirected_file_the_interrupted_run_did_not_write",
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.check_type_1",
+              "title": "`check_type:1`: free space at a location",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.check_type_2",
+              "title": "`check_type:2`: the destination is not under Program Files",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.post_command_del",
+              "title": "`post_command:del`: delete a file in the destination",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/src/services/install/post_commands.rs::post_commands_delete_inside_destination"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            },
+            {
+              "id": "install.features.post_command_ren",
+              "title": "`post_command:ren`: rename a file in the destination",
+              "origin": "original",
+              "state": "covered",
+              "tests": [
+                "crates/ttwright-core/tests/install.rs::every_supported_operation_installs"
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
