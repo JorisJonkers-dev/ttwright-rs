@@ -26,8 +26,8 @@ env:
   CARGO_TERM_COLOR: always
   # The pinned tally release (https://github.com/JorisJonkers-dev/tally) and the SHA-256 of its Linux binary, from
   # that release's SHA256SUMS.
-  TALLY_VERSION: v0.6.0
-  TALLY_SHA256: 4869bf6028f3833c62d8c9fd40167bfa749dc753b1999c82b9cbea0b4ef45377
+  TALLY_VERSION: v0.8.0
+  TALLY_SHA256: 5dc487d3f84248e5a80a06f989acb31b3040ee77342656971437f76493e925e6
   # The generated feature-catalogue reports: the only files the `reports` job may commit on main.
   REPORT_FILES: >-
     docs/coverage/FEATURES.md
