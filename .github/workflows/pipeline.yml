@@ -1,18 +1,20 @@
 # One pipeline ending in "Pipeline Complete", the only required check (estate convention). The Linux checks are steps
 # of that one job; each carries `if: !cancelled()` so one failure still shows the rest. The reusable workflows
 # (hygiene, PR title, quarantine) and the Windows and macOS builds cannot be steps of a Linux job, so they are jobs
-# that its last step gates on.
+# that its last step gates on. "Changed files" decides what a pull request needs: documentation-only changes skip the
+# Rust steps, and Windows and macOS (2x and 10x the minutes of Linux) run only on a push to main, with the label
+# `ci:all-os`, or when the change touches build setup or a file with platform conditions.
 name: Pipeline
 
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize]
+    types: [opened, edited, reopened, synchronize, labeled]
   push:
     branches: [main]
   workflow_dispatch:
 
 # A new commit on a branch cancels the older run. A title edit has its own group, so it neither cancels nor is
-# cancelled by a push. main is never cancelled, so every main commit has a finished run.
+# cancelled by a push (a label starts a run, because `ci:all-os` adds Windows and macOS). main is never cancelled, so every main commit has a finished run.
 concurrency:
   group: pipeline-${{ github.ref == 'refs/heads/main' && github.sha || format('{0}-{1}', github.event.pull_request.number || github.ref, github.event.action == 'edited' && github.run_id || 'commits') }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -35,6 +37,42 @@ env:
     docs/coverage/tally.svg
 
 jobs:
+  changes:
+    name: Changed files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+      platforms: ${{ steps.diff.outputs.platforms }}
+      cc: ${{ steps.diff.outputs.cc }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+          # code: the Rust steps; platforms: Windows and macOS; cc: the Windows build with the newest cc.
+          out() { printf 'code=%s\nplatforms=%s\ncc=%s\n' "$1" "$2" "$3" >>"$GITHUB_OUTPUT"; echo "Rust: $1, Windows and macOS: $2, newest cc: $3 ($4)"; exit 0; }
+          [ "$GITHUB_EVENT_NAME" = pull_request ] || out true true true "not a pull request"
+          if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE" 2>/dev/null; then out true true true "no base to compare with"; fi
+          files="$(git diff --name-only "$BASE...$HEAD")"
+          grep -qvE '^(docs/|LICENSE$|.*\.md$)' <<<"$files" || out false false false "only documentation changed"
+          cc=false
+          grep -qE '^(Cargo\.(toml|lock)|rust-toolchain\.toml|crates/[^/]+/Cargo\.toml|\.github/workflows/pipeline\.yml)$' <<<"$files" && cc=true
+          jq -e 'index("ci:all-os")' <<<"$LABELS" >/dev/null && out true true true "label ci:all-os"
+          grep -qE '^(Cargo\.(toml|lock)|rust-toolchain\.toml|mise\.toml|deny\.toml|clippy\.toml|\.config/.*|\.github/workflows/pipeline\.yml|crates/[^/]+/Cargo\.toml)$' <<<"$files" && out true true "$cc" "build setup changed"
+          # Rust files that contain platform conditions, as they are after the change.
+          while read -r f; do
+            case "$f" in *.rs) [ -f "$f" ] && grep -qE 'cfg(_attr)?!?\(.*(windows|unix|target_os|target_family)' "$f" && out true true "$cc" "platform code in $f";; esac
+          done <<<"$files"
+          out true false "$cc" "nothing platform-specific changed"
+
   # Named repository-hygiene so its checks keep the names the branch ruleset requires
   # ("repository-hygiene / Agent Attribution Guard").
   hygiene:
@@ -58,6 +96,8 @@ jobs:
   # The installer must build and test natively on every platform the Toolbox ships (ADR-0006 of the Toolbox).
   platforms:
     name: Build and test (${{ matrix.os }})
+    needs: changes
+    if: ${{ needs.changes.outputs.platforms == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -100,8 +140,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  # Only where a newer cc can change the outcome: a push to main, the label, or a change to the dependency bounds.
   windows-newest-cc:
     name: Build with the newest cc the bound allows (Windows)
+    needs: changes
+    if: ${{ needs.changes.outputs.cc == 'true' }}
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
@@ -120,7 +163,7 @@ jobs:
 
   pipeline-complete:
     name: Pipeline Complete
-    needs: [hygiene, pr-title, quarantine, platforms, windows-newest-cc]
+    needs: [changes, hygiene, pr-title, quarantine, platforms, windows-newest-cc]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -135,6 +178,7 @@ jobs:
         with:
           cache: true
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: ${{ needs.changes.outputs.code == 'true' }}
         with:
           workspaces: |
             . -> target
@@ -143,14 +187,14 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Format
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         run: |
           cargo fmt --all --check
           cargo fmt --all --check --manifest-path fuzz/Cargo.toml
           cargo fmt --all --check --manifest-path tools/coverage-gate/Cargo.toml
 
       - name: Lint
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         run: |
           cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo clippy --all-targets --locked --manifest-path tools/coverage-gate/Cargo.toml -- -D warnings
@@ -159,13 +203,13 @@ jobs:
       # JUnit (.config/nextest.toml, profile ci) the feature catalogue. nextest does not run doc tests; the next step does.
       - name: Tests with coverage
         id: tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         run: mise exec -- cargo llvm-cov nextest --workspace --locked --profile ci --lcov --output-path lcov.info
       - name: Doc tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         run: cargo test --workspace --locked --doc
       - name: Keep the JUnit results
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         run: |
           mkdir -p "$RUNNER_TEMP/junit"
           for f in target/nextest/ci/junit.xml target/llvm-cov-target/nextest/ci/junit.xml; do
@@ -173,7 +217,7 @@ jobs:
           done
       # Kept with the run as well, like Windows' and macOS', so anyone can re-read all three systems' results.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         with:
           name: junit-linux
           path: ${{ runner.temp }}/junit/junit-linux.xml
@@ -182,7 +226,7 @@ jobs:
 
       # 70% of the executable lines a change adds or edits must run in a test (docs/COVERAGE.md).
       - name: Changed-line coverage gate (70%)
-        if: ${{ !cancelled() && steps.tests.outcome == 'success' }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && steps.tests.outcome == 'success' }}
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
@@ -198,7 +242,7 @@ jobs:
       # rust-version equals the pinned toolchain (1.100), so building with rust-toolchain.toml is the MSRV check;
       # this step fails if a crate declares a different one or the toolchain file moves without it.
       - name: MSRV
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         run: |
           set -euo pipefail
           declared="$(cargo metadata --format-version 1 --no-deps | jq -r '[.packages[].rust_version] | unique | join(",")')"
@@ -208,7 +252,7 @@ jobs:
 
       # The JUnit results of Windows and macOS (`platforms`), beside Linux's from the step above.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         continue-on-error: true
         with:
           pattern: junit-*
@@ -223,10 +267,11 @@ jobs:
       # the `reports` job.
       - name: Feature catalogue (tally)
         id: catalogue
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           JUNIT: ${{ runner.temp }}/junit
+          PLATFORMS: ${{ needs.changes.outputs.platforms }}
         run: |
           set -euo pipefail
           # The files the `reports` job commits on main must not be ignored, or its `git add` fails there.
@@ -240,22 +285,31 @@ jobs:
           echo "${TALLY_SHA256}  $RUNNER_TEMP/tally" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/tally"
           tally="$RUNNER_TEMP/tally"
-          # The tests always run here, so a missing file is a lost upload or a test job that did not finish: that
-          # must not switch the ratchet off.
-          for os in linux windows macos; do
-            if [ ! -f "$JUNIT/junit-$os.xml" ]; then
-              echo "::error title=Feature catalogue::no JUnit results from $os; the covered count needs all three platforms"; exit 1
-            fi
-          done
-          "$tally" ingest --junit "$JUNIT/junit-linux.xml" --junit "$JUNIT/junit-windows.xml" --junit "$JUNIT/junit-macos.xml" --out "$RUNNER_TEMP/results.json"
-          args=(--results "$RUNNER_TEMP/results.json")
+          args=()
+          if [ "$PLATFORMS" = false ]; then
+            # Windows and macOS did not run on this pull request (label `ci:all-os` runs them): the structure checks
+            # still run, the covered count and the ratchet are left to the push to main, which runs all three.
+            echo "::notice title=Feature catalogue::Windows and macOS skipped: no covered count and no ratchet on this pull request"
+          else
+            # The platforms ran, so a missing file is a lost upload or a test job that did not finish: that must not
+            # switch the ratchet off.
+            for os in linux windows macos; do
+              if [ ! -f "$JUNIT/junit-$os.xml" ]; then
+                echo "::error title=Feature catalogue::no JUnit results from $os; the covered count needs all three platforms"; exit 1
+              fi
+            done
+            "$tally" ingest --junit "$JUNIT/junit-linux.xml" --junit "$JUNIT/junit-windows.xml" --junit "$JUNIT/junit-macos.xml" --out "$RUNNER_TEMP/results.json"
+            args=(--results "$RUNNER_TEMP/results.json")
+          fi
           # Pull requests never carry the generated reports, so none can lower the bar the ratchet measures against.
           if [ "$GITHUB_EVENT_NAME" = pull_request ] && git diff --name-only "$BASE" HEAD -- docs/coverage | grep -q .; then
             echo "::error title=Feature catalogue::docs/coverage/ is generated on main; leave it out of the pull request"; exit 1
           fi
           # The ratchet measures against the report of the base revision (main before this change).
           ratchet=()
-          if [ -n "${BASE:-}" ] && git show "${BASE}:docs/coverage/tally-report.json" >"$RUNNER_TEMP/base-report.json" 2>/dev/null; then
+          if [ ${#args[@]} -eq 0 ]; then
+            :
+          elif [ -n "${BASE:-}" ] && git show "${BASE}:docs/coverage/tally-report.json" >"$RUNNER_TEMP/base-report.json" 2>/dev/null; then
             ratchet=(--ratchet "$RUNNER_TEMP/base-report.json")
           elif [ -f docs/coverage/tally-report.json ]; then
             ratchet=(--ratchet docs/coverage/tally-report.json)
@@ -306,31 +360,32 @@ jobs:
           retention-days: 3
 
       - name: Fuzz harnesses compile
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         run: cargo check --locked --manifest-path fuzz/Cargo.toml
 
       - name: Licences, bans, sources and advisories
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         run: |
           mise exec -- cargo deny --locked check
           mise exec -- cargo deny --locked --manifest-path fuzz/Cargo.toml check
 
       - name: Advisories (cargo audit)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         run: mise exec -- cargo audit
 
       - name: Lint GitHub Actions workflows
         if: ${{ !cancelled() }}
         run: mise exec -- actionlint -color .github/workflows/*.yml
 
-      # A job that did not succeed fails the gate, except the two that only run on pull requests.
+      # A job that did not succeed fails the gate, except the two that only run on pull requests and the two that
+      # Changed files switched off (Windows and macOS; the newest-cc build), each only when its own flag is false.
       - name: Gated jobs passed
         if: ${{ !cancelled() }}
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
-          failed="$(jq -r 'to_entries[] | select(.value.result != "success") | select(.value.result != "skipped" or (.key | IN("hygiene", "pr-title") | not)) | "\(.key): \(.value.result)"' <<<"$NEEDS")"
+          failed="$(jq -r '. as $n | to_entries[] | select(.value.result != "success") | select(.value.result != "skipped" or ((.key | IN("hygiene", "pr-title")) or (.key == "platforms" and $n.changes.outputs.platforms == "false") or (.key == "windows-newest-cc" and $n.changes.outputs.cc == "false") | not)) | "\(.key): \(.value.result)"' <<<"$NEEDS")"
           if [ -n "$failed" ]; then echo "$failed"; exit 1; fi
 
   # On main, the feature-catalogue reports rendered by Pipeline Complete go onto main as one commit of those files only,
